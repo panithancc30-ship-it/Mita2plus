@@ -1,0 +1,16 @@
+{
+  "name": "เช็คเบี้ยประกันรถยนต์ มิตรแท้",
+  "short_name": "เช็คเบี้ยมิตรแท้",
+  "description": "เช็คเบี้ยประกันรถยนต์ ชั้น 2+ 3+ และ 3 พร้อมออกใบเสนอราคา",
+  "lang": "th",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f5f2",
+  "theme_color": "#0b6b35",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
