@@ -153,7 +153,6 @@
   function plusBlockReason(v) {
     if (v.kind !== 'car' && v.kind !== 'pickup') return 'ป.2+ และ ป.3+ รับเฉพาะรถเก๋ง (รหัส 110) และรถกระบะไม่เกิน 4 ตัน (รหัส 320)';
     if (v.kind === 'car' && state.usage === 'commercial') return 'ป.2+ และ ป.3+ รับเฉพาะรถใช้ส่วนบุคคล';
-    if (v.brand.group === 'luxury') return `${v.brand.name} ไม่อยู่ในตารางเบี้ย ป.2+ / ป.3+ (รับเฉพาะรถญี่ปุ่นและรถตลาด) หากต้องการให้สอบถามฝ่ายรับประกันภัย`;
     if (v.brand.group === 'super') return `${v.brand.name} เป็นรถกลุ่ม Super Car ไม่สามารถซื้อตามตารางเบี้ยได้ กรุณาติดต่อฝ่ายรับประกันภัย`;
     return null;
   }
@@ -165,29 +164,56 @@
     const offers = [];
 
     if (!plusBlockReason(v)) {
-      const group = v.kind === 'pickup' && v.body === 'fridge' ? 'fridge' : 'standard';
-      ['plus2', 'plus3'].forEach((pid) => {
-        const p = R.plus[pid];
-        const sum = p.sums.includes(sums[pid]) ? sums[pid] : p.sums[0];
-        const i = p.sums.indexOf(sum);
-        Object.keys(p.rates[group]).forEach((tier) => {
+      const isLuxury = v.brand.group === 'luxury';
+
+      if (isLuxury) {
+        // รถยุโรป อเมริกา หรือนำเข้า — ใช้ตารางอัตราเบี้ยเฉพาะ (มี Deduct เท่านั้น)
+        ['plus2_euro', 'plus3_euro'].forEach((pid) => {
+          const p = R.plus[pid];
+          const sumKey = pid.replace('_euro', '');
+          const sum = p.sums.includes(sums[sumKey]) ? sums[sumKey] : p.sums[0];
+          const i = p.sums.indexOf(sum);
           offers.push({
-            key: `${pid}.${tier}`,
+            key: pid,
             type: 'plus',
             pid,
-            tier,
+            tier: null,
             cls: p.cls,
             product: p.name,
-            planTh: `แผน ${TIER_TH[tier]}`,
+            planTh: 'รถยุโรป อเมริกา / นำเข้า',
             sum,
             sums: p.sums,
-            deductible: deduct ? p.deductible : 0,
+            deductible: p.deductible,
             deductAmount: p.deductible,
-            price: p.rates[group][tier][deduct ? 'deduct' : 'noDeduct'][i],
-            cov: p.coverage[tier],
+            price: p.rates[i],
+            cov: p.coverage,
           });
         });
-      });
+      } else {
+        const group = v.kind === 'pickup' && v.body === 'fridge' ? 'fridge' : 'standard';
+        ['plus2', 'plus3'].forEach((pid) => {
+          const p = R.plus[pid];
+          const sum = p.sums.includes(sums[pid]) ? sums[pid] : p.sums[0];
+          const i = p.sums.indexOf(sum);
+          Object.keys(p.rates[group]).forEach((tier) => {
+            offers.push({
+              key: `${pid}.${tier}`,
+              type: 'plus',
+              pid,
+              tier,
+              cls: p.cls,
+              product: p.name,
+              planTh: `แผน ${TIER_TH[tier]}`,
+              sum,
+              sums: p.sums,
+              deductible: deduct ? p.deductible : 0,
+              deductAmount: p.deductible,
+              price: p.rates[group][tier][deduct ? 'deduct' : 'noDeduct'][i],
+              cov: p.coverage[tier],
+            });
+          });
+        });
+      }
     }
 
     if ((v.kind === 'car' || v.kind === 'pickup' || v.kind === 'van') && v.brand.group !== 'super') {
@@ -260,7 +286,10 @@
 
   const isPicked = (o) => state.picks.some((p) => pickId(p) === pickId(pickFromOffer(o)));
 
-  const shortName = (o) => `ชั้น ${o.cls} ${o.tier || (o.type === 'truck' ? 'รถบรรทุก' : 'ทวีคูณ')}`;
+  const shortName = (o) => {
+    if (o.type === 'plus' && !o.tier) return `ชั้น ${o.cls}`;
+    return `ชั้น ${o.cls} ${o.tier || (o.type === 'truck' ? 'รถบรรทุก' : 'ทวีคูณ')}`;
+  };
 
   function pickDetail(o) {
     const d = o.deductible ? `Deduct ${money(o.deductible)}` : 'ไม่มี Deduct';
@@ -313,7 +342,7 @@
   }
 
   function rowsFor(offers) {
-    return COVERAGE_ROWS.filter((r) => !r.plus2Only || offers.some((o) => o.pid === 'plus2'));
+    return COVERAGE_ROWS.filter((r) => !r.plus2Only || offers.some((o) => o.pid === 'plus2' || o.pid === 'plus2_euro'));
   }
 
   function highlights(o) {
@@ -377,9 +406,15 @@
     const max = R.plusRules.maxAge;
     const list = [];
     if (plus) {
-      list.push(`${scope}สำหรับรถใช้ส่วนบุคคล เฉพาะรถญี่ปุ่นและรถตลาด (รหัส 110) และรถปิคอัพไม่เกิน 4 ตัน (รหัส 320) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
-        + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
-      if (v.body === 'fridge') list.push(`${scope}ไม่คุ้มครองอุปกรณ์ต่อเติมตู้เย็น ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ต่อเติมเอง`);
+      const isEuro = v.brand.group === 'luxury';
+      if (isEuro) {
+        list.push(`ชั้น 2+ / 3+ (รถยุโรป) สำหรับรถยุโรป อเมริกา หรือนำเข้า ที่ใช้ส่วนบุคคล (รหัส 110) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
+          + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
+      } else {
+        list.push(`${scope}สำหรับรถใช้ส่วนบุคคล เฉพาะรถญี่ปุ่นและรถตลาด (รหัส 110) และรถปิคอัพไม่เกิน 4 ตัน (รหัส 320) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
+          + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
+        if (v.body === 'fridge') list.push(`${scope}ไม่คุ้มครองอุปกรณ์ต่อเติมตู้เย็น ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ต่อเติมเอง`);
+      }
       if (state.addons.ncd) list.push('ส่วนลดประวัติดีสำหรับรถที่ไม่มีเคลม (ไม่ว่าฝ่ายถูกหรือฝ่ายผิด) พิจารณาประวัติตั้งแต่ปีรับประกันภัย 2558');
     }
     if (truck) list.push('ส่วนลดประวัติพิจารณาตามนโยบายของบริษัทฯ ไม่มีการให้ส่วนลดกลุ่ม');
@@ -594,12 +629,12 @@
     const notices = [];
     if (block && !v.kind.startsWith('truck')) notices.push(block);
     if (v.brand.group === 'other' || (v.model && v.model.custom)) {
-      notices.push('รถที่ไม่มีในรายการ บริษัทฯ จะพิจารณาการรับประกันภัยอีกครั้ง (ป.2+ / ป.3+ รับเฉพาะรถญี่ปุ่นและรถตลาด)');
+      notices.push('รถที่ไม่มีในรายการ บริษัทฯ จะพิจารณาการรับประกันภัยอีกครั้ง (ป.2+ / ป.3+ รับเฉพาะรถญี่ปุ่น รถตลาด และรถยุโรป/นำเข้า เท่านั้น)');
     }
 
     const tabs = [['all', 'ทั้งหมด', offers.length], ['2+', 'ชั้น 2+', counts['2+']], ['3+', 'ชั้น 3+', counts['3+']], ['3', 'ชั้น 3', counts[3]]]
       .filter(([id, , n]) => id === 'all' || n > 0);
-    const withDeduct = shown.find((o) => o.type !== 'tawikoon');
+    const withDeduct = shown.find((o) => o.type !== 'tawikoon' && o.pid !== 'plus2_euro' && o.pid !== 'plus3_euro');
 
     return `
       ${carSummary(v)}
@@ -1339,7 +1374,7 @@
     const el = e.target;
     const action = el.dataset && el.dataset.action;
     if (action === 'sum') {
-      state.sums[el.dataset.pid] = Number(el.value);
+      state.sums[el.dataset.pid.replace('_euro', '')] = Number(el.value);
       render();
     } else if (action === 'pick-sum') {
       updatePick(Number(el.dataset.index), { sum: Number(el.value) });
