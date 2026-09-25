@@ -317,6 +317,7 @@
     { id: 'theft', label: 'รถยนต์สูญหาย / ไฟไหม้' },
     { id: 'tpbi', label: 'ชีวิต ร่างกาย บุคคลภายนอก' },
     { id: 'tppd', label: 'ทรัพย์สินบุคคลภายนอก' },
+    { id: 'tppdDeduct', label: 'ค่าเสียหายส่วนแรก (ทรัพย์สินคู่กรณี)', tppdDeductOnly: true },
     { id: 'pa', label: 'อุบัติเหตุส่วนบุคคล', sub: 'ผู้ขับขี่และผู้โดยสาร' },
     { id: 'med', label: 'ค่ารักษาพยาบาล' },
     { id: 'bail', label: 'ประกันตัวผู้ขับขี่' },
@@ -333,7 +334,8 @@
       case 'own': return o.type === 'plus' ? `ตามทุน ${money(o.sum)}` : null;
       case 'theft': return o.type === 'plus' && c.theftFire ? `ตามทุน ${money(o.sum)}` : null;
       case 'tpbi': return `${money(tpbiPerson || c.tpbiPerson)} /คน<br>${money(c.tpbiTime)} /ครั้ง`;
-      case 'tppd': return `${money(c.tppd)} /ครั้ง` + (o.type === 'truck' && o.deductible ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.deductible)}</small>` : '') + (o.tppdDeduct ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.tppdDeduct)}</small>` : '');
+      case 'tppd': return `${money(c.tppd)} /ครั้ง` + (o.type === 'truck' && o.deductible ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.deductible)}</small>` : '');
+      case 'tppdDeduct': return o.tppdDeduct ? `${money(o.tppdDeduct)} /ครั้ง` : null;
       case 'pa': return c.pa ? `${money(c.pa)} /คน${seatTxt}` : null;
       case 'med': return c.med ? `${money(c.med)} /คน${seatTxt}` : null;
       case 'bail': return `${money(c.bail)} /ครั้ง`;
@@ -349,7 +351,11 @@
   }
 
   function rowsFor(offers) {
-    return COVERAGE_ROWS.filter((r) => !r.plus2Only || offers.some((o) => o.pid === 'plus2' || o.pid === 'plus2_euro'));
+    return COVERAGE_ROWS.filter((r) => {
+      if (r.plus2Only && !offers.some((o) => o.pid === 'plus2' || o.pid === 'plus2_euro')) return false;
+      if (r.tppdDeductOnly && !offers.some((o) => o.tppdDeduct)) return false;
+      return true;
+    });
   }
 
   function highlights(o) {
