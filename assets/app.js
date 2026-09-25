@@ -190,12 +190,18 @@
           });
         });
       } else {
-        const group = v.kind === 'pickup' && v.body === 'fridge' ? 'fridge' : 'standard';
+        const isFridge = v.kind === 'pickup' && v.body === 'fridge';
+        const group = isFridge ? 'fridge' : 'standard';
         ['plus2', 'plus3'].forEach((pid) => {
           const p = R.plus[pid];
           const sum = p.sums.includes(sums[pid]) ? sums[pid] : p.sums[0];
           const i = p.sums.indexOf(sum);
+          // ตู้ทึบ/ตู้แห้ง/ตู้เย็น: มี Deduct เสมอ, ใช้ fridge_coverage ถ้ามี
+          const rateKey = (isFridge || deduct) ? 'deduct' : 'noDeduct';
+          const covSource = isFridge && p.fridge_coverage ? p.fridge_coverage : p.coverage;
           Object.keys(p.rates[group]).forEach((tier) => {
+            const cov = covSource[tier];
+            if (!cov) return;
             offers.push({
               key: `${pid}.${tier}`,
               type: 'plus',
@@ -206,10 +212,11 @@
               planTh: `แผน ${TIER_TH[tier]}`,
               sum,
               sums: p.sums,
-              deductible: deduct ? p.deductible : 0,
+              deductible: (isFridge || deduct) ? p.deductible : 0,
               deductAmount: p.deductible,
-              price: p.rates[group][tier][deduct ? 'deduct' : 'noDeduct'][i],
-              cov: p.coverage[tier],
+              tppdDeduct: cov.tppdDeduct || 0,
+              price: p.rates[group][tier][rateKey][i],
+              cov,
             });
           });
         });
@@ -326,7 +333,7 @@
       case 'own': return o.type === 'plus' ? `ตามทุน ${money(o.sum)}` : null;
       case 'theft': return o.type === 'plus' && c.theftFire ? `ตามทุน ${money(o.sum)}` : null;
       case 'tpbi': return `${money(tpbiPerson || c.tpbiPerson)} /คน<br>${money(c.tpbiTime)} /ครั้ง`;
-      case 'tppd': return `${money(c.tppd)} /ครั้ง` + (o.type === 'truck' && o.deductible ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.deductible)}</small>` : '');
+      case 'tppd': return `${money(c.tppd)} /ครั้ง` + (o.type === 'truck' && o.deductible ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.deductible)}</small>` : '') + (o.tppdDeduct ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.tppdDeduct)}</small>` : '');
       case 'pa': return c.pa ? `${money(c.pa)} /คน${seatTxt}` : null;
       case 'med': return c.med ? `${money(c.med)} /คน${seatTxt}` : null;
       case 'bail': return `${money(c.bail)} /ครั้ง`;
@@ -376,7 +383,10 @@
     if (o.type === 'plus' && v.age > R.plusRules.maxAge) {
       notes.push({ icon: 'alert', warn: true, text: `รถอายุ ${v.age} ปี (เกิน ${R.plusRules.maxAge} ปี) ต้องส่งพิจารณาอนุมัติ` });
     }
-    if (o.type === 'plus' && v.body === 'fridge') notes.push({ icon: 'info', text: 'ไม่คุ้มครองอุปกรณ์ต่อเติมตู้เย็น' });
+    if (o.type === 'plus' && v.body === 'fridge') {
+      notes.push({ icon: 'info', text: 'ไม่คุ้มครองอุปกรณ์ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น' });
+      if (o.tppdDeduct) notes.push({ icon: 'info', text: `ค่าเสียหายส่วนแรกทรัพย์สินคู่กรณี ${money(o.tppdDeduct)} บาท` });
+    }
     return notes;
   }
 
@@ -413,7 +423,7 @@
       } else {
         list.push(`${scope}สำหรับรถใช้ส่วนบุคคล เฉพาะรถญี่ปุ่นและรถตลาด (รหัส 110) และรถปิคอัพไม่เกิน 4 ตัน (รหัส 320) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
           + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
-        if (v.body === 'fridge') list.push(`${scope}ไม่คุ้มครองอุปกรณ์ต่อเติมตู้เย็น ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ต่อเติมเอง`);
+        if (v.body === 'fridge') list.push(`${scope}ไม่คุ้มครองอุปกรณ์ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ตกแต่งต่อเติมเอง มีค่าเสียหายส่วนแรกทรัพย์สินคู่กรณี 5,000 บาท`);
       }
       if (state.addons.ncd) list.push('ส่วนลดประวัติดีสำหรับรถที่ไม่มีเคลม (ไม่ว่าฝ่ายถูกหรือฝ่ายผิด) พิจารณาประวัติตั้งแต่ปีรับประกันภัย 2558');
     }
@@ -634,7 +644,7 @@
 
     const tabs = [['all', 'ทั้งหมด', offers.length], ['2+', 'ชั้น 2+', counts['2+']], ['3+', 'ชั้น 3+', counts['3+']], ['3', 'ชั้น 3', counts[3]]]
       .filter(([id, , n]) => id === 'all' || n > 0);
-    const withDeduct = shown.find((o) => o.type !== 'tawikoon' && o.pid !== 'plus2_euro' && o.pid !== 'plus3_euro');
+    const withDeduct = v.body !== 'fridge' && shown.find((o) => o.type !== 'tawikoon' && o.pid !== 'plus2_euro' && o.pid !== 'plus3_euro');
 
     return `
       ${carSummary(v)}

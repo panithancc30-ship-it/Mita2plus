@@ -40,15 +40,22 @@ window.MT_RATES = {
           GOLD:     { deduct: [6600, 7000, 7400, 7800, 8100, 8400], noDeduct: [7300, 7800, 8300, 8800, 9300, 9700] },
           SILVER:   { deduct: [5900, 6300, 6600, 6900, 7100, 7400], noDeduct: [6600, 7100, 7500, 7900, 8300, 8700] },
         },
-        fridge: { // รถปิคอัพไม่เกิน 4 ตัน รหัส 320 ต่อเติมตู้เย็น
-          GOLD:   { deduct: [8600, 9000, 9400, 9800, 10100, 10400], noDeduct: [9300, 9800, 10300, 10800, 11300, 11700] },
-          SILVER: { deduct: [7400, 7800, 8100, 8400, 8600, 8900],   noDeduct: [8100, 8600, 9000, 9400, 9800, 10200] },
+        fridge: { // รถปิคอัพไม่เกิน 4 ตัน รหัส 320 ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น
+          // Deduct ตัวรถ 2,000 + ทรัพย์สินคู่กรณี 5,000 — ไม่มีตัวเลือก noDeduct
+          // ที่มา: ประเภทที่ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น.pdf (2569)
+          GOLD:   { deduct: [15200, 15700, 16300, 16800, 17200, 17600] },
+          SILVER: { deduct: [13700, 14200, 14600, 15000, 15200, 15600] },
         },
       },
       coverage: {
-        PLATINUM: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000, dailyComp: 1000, travelComp: 1000 },
-        GOLD:     { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000 },
-        SILVER:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: true, pa: 50000,  med: 50000,  bail: 200000 },
+        PLATINUM: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true,  pa: 150000, med: 150000, bail: 600000, dailyComp: 1000, travelComp: 1000 },
+        GOLD:     { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true,  pa: 150000, med: 150000, bail: 600000 },
+        SILVER:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: true,  pa: 50000,  med: 50000,  bail: 200000 },
+      },
+      // ความคุ้มครองพิเศษสำหรับตู้ทึบ/ตู้แห้ง/ตู้เย็น — ไม่คุ้มครองไฟไหม้/สูญหาย, มี Deduct คู่กรณี 5,000
+      fridge_coverage: {
+        GOLD:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: false, pa: 150000, med: 150000, bail: 600000, tppdDeduct: 5000 },
+        SILVER: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: false, pa: 50000,  med: 50000,  bail: 200000, tppdDeduct: 5000 },
       },
     },
 
@@ -63,14 +70,18 @@ window.MT_RATES = {
           GOLD:   { deduct: [6200, 6200, 6200, 6200, 6400, 6600, 6800, 7100], noDeduct: [7300, 7300, 7300, 7300, 7400, 7600, 7900, 8200] },
           SILVER: { deduct: [4700, 4700, 4700, 4700, 4700, 5400, 5600, 5900], noDeduct: [5700, 5700, 5700, 5700, 5700, 6400, 6700, 7000] },
         },
-        fridge: {
-          GOLD:   { deduct: [7700, 7700, 7700, 7700, 7900, 8100, 8300, 8600], noDeduct: [8800, 8800, 8800, 8800, 8900, 9100, 9400, 9700] },
-          SILVER: { deduct: [6500, 6500, 6500, 6500, 6700, 6900, 7100, 7400], noDeduct: [7600, 7600, 7600, 7600, 7700, 7900, 8200, 8500] },
+        fridge: { // ตู้ทึบ ตู้แห้ง ตู้เย็น — Deduct ตัวรถ 2,000 + คู่กรณี 5,000, ไม่มี noDeduct
+          GOLD:   { deduct: [13100, 13100, 13100, 13100, 13300, 13600, 13800, 14200] },
+          SILVER: { deduct: [11500, 11500, 11500, 11500, 11800, 12000, 12300, 12700] },
         },
       },
       coverage: {
         GOLD:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: false, pa: 150000, med: 150000, bail: 600000 },
         SILVER: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: false, pa: 50000,  med: 50000,  bail: 200000 },
+      },
+      fridge_coverage: {
+        GOLD:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: false, pa: 150000, med: 150000, bail: 600000, tppdDeduct: 5000 },
+        SILVER: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: false, pa: 50000,  med: 50000,  bail: 200000, tppdDeduct: 5000 },
       },
     },
 
