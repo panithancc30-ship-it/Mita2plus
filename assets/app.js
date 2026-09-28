@@ -80,6 +80,7 @@
     year: null,
     body: null,
     usage: 'personal',
+    custType: 'new', // 'new' = ลูกค้าใหม่ปี 2569, 'old' = ลูกค้าเดิม — ใช้กับ ป.2+/ป.3+ ญี่ปุ่น/รถตลาดเท่านั้น
     deduct: true,
     filter: 'all',
     sums: { plus2: 100000, plus3: 100000 },
@@ -150,10 +151,28 @@
   }
 
   // ---------- premium engine ----------
+  // สินค้า ป.2+/ป.3+ ที่ใช้ได้กับรถคันนี้ (ตามยี่ห้อ/รหัสรถ/ลักษณะตัวถัง/ประเภทลูกค้า)
+  function plusProducts(v) {
+    if (v.kind !== 'car' && v.kind !== 'pickup') return [];
+    if (v.brand.group === 'super') return [];
+    if (v.brand.group === 'luxury') return v.code === '110' ? ['plus2_euro', 'plus3_euro'] : [];
+    if (v.code === '120') return ['plus2_com', 'plus3_com'];
+    if (v.kind === 'pickup' && v.body === 'fridge') return ['plus2_tu', 'plus3_tu'];
+    return state.custType === 'old' ? ['plus2', 'plus3'] : ['plus2_new', 'plus3_new'];
+  }
+
+  // สวิตช์ "ลูกค้าใหม่/เดิม" มีผลเฉพาะรถญี่ปุ่น/รถตลาดมาตรฐาน (ไม่ใช่ตู้เย็น/ยุโรป/พาณิชย์)
+  function custTypeApplicable(v) {
+    return (v.kind === 'car' || v.kind === 'pickup')
+      && v.brand.group !== 'luxury' && v.brand.group !== 'super'
+      && v.code !== '120'
+      && !(v.kind === 'pickup' && v.body === 'fridge');
+  }
+
   function plusBlockReason(v) {
-    if (v.kind !== 'car' && v.kind !== 'pickup') return 'ป.2+ และ ป.3+ รับเฉพาะรถเก๋ง (รหัส 110) และรถกระบะไม่เกิน 4 ตัน (รหัส 320)';
-    if (v.kind === 'car' && state.usage === 'commercial') return 'ป.2+ และ ป.3+ รับเฉพาะรถใช้ส่วนบุคคล';
+    if (v.kind !== 'car' && v.kind !== 'pickup') return 'ป.2+ และ ป.3+ รับเฉพาะรถเก๋ง (รหัส 110/120) และรถกระบะไม่เกิน 4 ตัน (รหัส 320)';
     if (v.brand.group === 'super') return `${v.brand.name} เป็นรถกลุ่ม Super Car ไม่สามารถซื้อตามตารางเบี้ยได้ กรุณาติดต่อฝ่ายรับประกันภัย`;
+    if (v.brand.group === 'luxury' && v.code !== '110') return `${v.brand.name} ที่ใช้เพื่อการพาณิชย์ไม่อยู่ในตารางเบี้ย ป.2+ / ป.3+ กรุณาติดต่อฝ่ายรับประกันภัย`;
     return null;
   }
 
@@ -163,65 +182,36 @@
     const deduct = opts && 'deduct' in opts ? opts.deduct : state.deduct;
     const offers = [];
 
-    if (!plusBlockReason(v)) {
-      const isLuxury = v.brand.group === 'luxury';
-
-      if (isLuxury) {
-        // รถยุโรป อเมริกา หรือนำเข้า — ใช้ตารางอัตราเบี้ยเฉพาะ (มี Deduct เท่านั้น)
-        ['plus2_euro', 'plus3_euro'].forEach((pid) => {
-          const p = R.plus[pid];
-          const sumKey = pid.replace('_euro', '');
-          const sum = p.sums.includes(sums[sumKey]) ? sums[sumKey] : p.sums[0];
-          const i = p.sums.indexOf(sum);
-          offers.push({
-            key: pid,
-            type: 'plus',
-            pid,
-            tier: null,
-            cls: p.cls,
-            product: p.name,
-            planTh: 'รถยุโรป อเมริกา / นำเข้า',
-            sum,
-            sums: p.sums,
-            deductible: p.deductible,
-            deductAmount: p.deductible,
-            price: p.rates[i],
-            cov: p.coverage,
-          });
+    plusProducts(v).forEach((pid) => {
+      const p = R.plus[pid];
+      const family = pid.startsWith('plus2') ? 'plus2' : 'plus3';
+      const sum = p.sums.includes(sums[family]) ? sums[family] : p.sums[0];
+      const i = p.sums.indexOf(sum);
+      const rateKey = (p.noDeductOption && !deduct) ? 'noDeduct' : 'deduct';
+      Object.keys(p.rates).forEach((tier) => {
+        offers.push({
+          key: `${pid}.${tier}`,
+          type: 'plus',
+          pid,
+          family,
+          tier: p.single ? null : tier,
+          cls: p.cls,
+          product: p.name,
+          planTh: p.single ? (p.planTh || 'แผนมาตรฐาน') : `แผน ${TIER_TH[tier]}`,
+          sum,
+          sums: p.sums,
+          deductChoice: !!p.noDeductOption,
+          deductible: (!p.noDeductOption || deduct) ? p.deductible : 0,
+          deductAmount: p.deductible,
+          tppdDeduct: p.tppdDeduct || 0,
+          price: p.rates[tier][rateKey][i],
+          cov: p.coverage[tier],
+          ncd: p.ncd,
+          campaign: !!p.campaign,
+          needsQT: !!p.needsQT,
         });
-      } else {
-        const isFridge = v.kind === 'pickup' && v.body === 'fridge';
-        const group = isFridge ? 'fridge' : 'standard';
-        ['plus2', 'plus3'].forEach((pid) => {
-          const p = R.plus[pid];
-          const sum = p.sums.includes(sums[pid]) ? sums[pid] : p.sums[0];
-          const i = p.sums.indexOf(sum);
-          // ตู้ทึบ/ตู้แห้ง/ตู้เย็น: มี Deduct เสมอ, ใช้ fridge_coverage ถ้ามี
-          const rateKey = (isFridge || deduct) ? 'deduct' : 'noDeduct';
-          const covSource = isFridge && p.fridge_coverage ? p.fridge_coverage : p.coverage;
-          Object.keys(p.rates[group]).forEach((tier) => {
-            const cov = covSource[tier];
-            if (!cov) return;
-            offers.push({
-              key: `${pid}.${tier}`,
-              type: 'plus',
-              pid,
-              tier,
-              cls: p.cls,
-              product: p.name,
-              planTh: `แผน ${TIER_TH[tier]}`,
-              sum,
-              sums: p.sums,
-              deductible: (isFridge || deduct) ? p.deductible : 0,
-              deductAmount: p.deductible,
-              tppdDeduct: cov.tppdDeduct || 0,
-              price: p.rates[group][tier][rateKey][i],
-              cov,
-            });
-          });
-        });
-      }
-    }
+      });
+    });
 
     if ((v.kind === 'car' || v.kind === 'pickup' || v.kind === 'van') && v.brand.group !== 'super') {
       const t = R.tawikoon;
@@ -321,8 +311,8 @@
     { id: 'pa', label: 'อุบัติเหตุส่วนบุคคล', sub: 'ผู้ขับขี่และผู้โดยสาร' },
     { id: 'med', label: 'ค่ารักษาพยาบาล' },
     { id: 'bail', label: 'ประกันตัวผู้ขับขี่' },
-    { id: 'daily', label: 'เงินชดเชยรายได้', sub: 'นอนโรงพยาบาล สูงสุด 30 วัน/คน ไม่เกิน 7 คน', plus2Only: true },
-    { id: 'travel', label: 'ค่าเดินทางระหว่างรถเข้าซ่อม', sub: 'ไม่เกิน 3 ครั้ง/ปี', plus2Only: true },
+    { id: 'daily', label: 'เงินชดเชยรายได้', sub: 'นอนโรงพยาบาล สูงสุด 30 วัน/คน ไม่เกิน 7 คน', show: (offers) => offers.some((o) => o.cov.dailyComp) },
+    { id: 'travel', label: 'ค่าเดินทางระหว่างรถเข้าซ่อม', sub: 'ไม่เกิน 3 ครั้ง/ปี', show: (offers) => offers.some((o) => o.cov.travelComp) },
   ];
 
   // ค่าความคุ้มครองของแผน (HTML) — null = ไม่คุ้มครอง
@@ -352,7 +342,7 @@
 
   function rowsFor(offers) {
     return COVERAGE_ROWS.filter((r) => {
-      if (r.plus2Only && !offers.some((o) => o.pid === 'plus2' || o.pid === 'plus2_euro')) return false;
+      if (r.show && !r.show(offers)) return false;
       if (r.tppdDeductOnly && !offers.some((o) => o.tppdDeduct)) return false;
       return true;
     });
@@ -389,10 +379,13 @@
     if (o.type === 'plus' && v.age > R.plusRules.maxAge) {
       notes.push({ icon: 'alert', warn: true, text: `รถอายุ ${v.age} ปี (เกิน ${R.plusRules.maxAge} ปี) ต้องส่งพิจารณาอนุมัติ` });
     }
-    if (o.type === 'plus' && v.body === 'fridge') {
-      notes.push({ icon: 'info', text: 'ไม่คุ้มครองอุปกรณ์ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น' });
+    if (o.pid && o.pid.endsWith('_tu')) {
+      notes.push({ icon: 'info', text: 'ไม่คุ้มครองอุปกรณ์ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ตกแต่งต่อเติมเอง' });
+      notes.push({ icon: 'info', text: 'ไม่รับประกันภัยรถ Load เตี้ย หรือติด Skirt งานปั้น' });
       if (o.tppdDeduct) notes.push({ icon: 'info', text: `ค่าเสียหายส่วนแรกทรัพย์สินคู่กรณี ${money(o.tppdDeduct)} บาท` });
     }
+    if (o.campaign) notes.push({ icon: 'info', text: 'รวมส่วนลดไม่มีเคลม 500 บาทในเบี้ยนี้แล้ว (แคมเปญลูกค้าใหม่ปี 2569)' });
+    if (o.needsQT) notes.push({ icon: 'info', text: 'ต้องถ่ายรูปรถประกอบการพิจารณา และบันทึกเป็น QT เพื่อขออนุมัติ' });
     return notes;
   }
 
@@ -404,8 +397,8 @@
   function pricing(o, v) {
     const p = { premium: o.price, ncd: 0, tpbi: 0, cmi: 0 };
     if (o.type === 'plus') {
-      const ncd = R.plusRules.noClaimDiscount.find((x) => x.years === state.addons.ncd);
-      if (ncd) p.ncd = -ncd.amount;
+      const amount = o.ncd[Math.min(state.addons.ncd, o.ncd.length - 1)];
+      if (amount) p.ncd = -amount;
       const up = R.plusRules.tpbiUpgrade.find((x) => x.perPerson === state.addons.tpbi);
       if (up) p.tpbi = up.amount;
     }
@@ -415,26 +408,36 @@
   }
 
   function quoteConditions(v, offers) {
-    const plus = offers.some((o) => o.type === 'plus');
+    const plusOffers = offers.filter((o) => o.type === 'plus');
     const truck = offers.some((o) => o.type === 'truck');
-    const mixed = plus && offers.some((o) => o.type !== 'plus');
+    const mixed = plusOffers.length && offers.some((o) => o.type !== 'plus');
     const scope = mixed ? 'ชั้น 2+ / 3+ ' : '';
     const max = R.plusRules.maxAge;
     const list = [];
-    if (plus) {
-      const isEuro = v.brand.group === 'luxury';
-      if (isEuro) {
-        list.push(`ชั้น 2+ / 3+ (รถยุโรป) สำหรับรถยุโรป อเมริกา หรือนำเข้า ที่ใช้ส่วนบุคคล (รหัส 110) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
-          + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
-      } else {
-        list.push(`${scope}สำหรับรถใช้ส่วนบุคคล เฉพาะรถญี่ปุ่นและรถตลาด (รหัส 110) และรถปิคอัพไม่เกิน 4 ตัน (รหัส 320) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
-          + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
-        if (v.body === 'fridge') list.push(`${scope}ไม่คุ้มครองอุปกรณ์ต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ตกแต่งต่อเติมเอง มีค่าเสียหายส่วนแรกทรัพย์สินคู่กรณี 5,000 บาท`);
-      }
-      if (state.addons.ncd) list.push('ส่วนลดประวัติดีสำหรับรถที่ไม่มีเคลม (ไม่ว่าฝ่ายถูกหรือฝ่ายผิด) พิจารณาประวัติตั้งแต่ปีรับประกันภัย 2558');
+    const hasPid = (re) => plusOffers.some((o) => re.test(o.pid));
+
+    if (hasPid(/^plus[23](_new)?$/)) {
+      list.push(`${scope}สำหรับรถใช้ส่วนบุคคล เฉพาะรถญี่ปุ่นและรถตลาด (รหัส 110) และรถปิคอัพไม่เกิน 4 ตัน (รหัส 320) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
+        + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
+    }
+    if (hasPid(/_new$/)) {
+      list.push(`${scope}แคมเปญลูกค้าใหม่ปี 2569 ส่วนลดไม่มีเคลม 500 บาท รวมอยู่ในเบี้ยข้างต้นแล้ว`);
+    }
+    if (hasPid(/_tu$/)) {
+      list.push(`${scope}สำหรับรถกระบะต่อเติมตู้ทึบ ตู้แห้ง ตู้เย็น (รหัส 320) ไม่คุ้มครองอุปกรณ์ตกแต่งต่อเติม ลูกค้าต้องกรอกแบบฟอร์มรับผิดชอบอุปกรณ์ตกแต่งต่อเติมเอง มีค่าเสียหายส่วนแรกทรัพย์สินคู่กรณี 5,000 บาท ไม่รับประกันภัยรถ Load เตี้ยหรือติด Skirt งานปั้น`);
+    }
+    if (hasPid(/_euro$/)) {
+      list.push(`${scope}สำหรับรถยุโรป อเมริกา หรือนำเข้า ที่ใช้ส่วนบุคคล (รหัส 110) อายุรถไม่เกิน ${max} ปีนับจากปีจดทะเบียน`
+        + (v.age > max ? ` — รถคันนี้อายุ ${v.age} ปี ต้องส่งฝ่ายรับประกันภัยพิจารณาอนุมัติ` : ''));
+    }
+    if (hasPid(/_com$/)) {
+      list.push(`${scope}สำหรับรถยนต์นั่งใช้เชิงพาณิชย์ (รหัส 120) เฉพาะรถญี่ปุ่นและรถตลาด ต้องถ่ายรูปประกอบการพิจารณา และบันทึกเป็น QT เพื่อให้หน่วยงานรับประกันภัยพิจารณาอนุมัติ`);
+    }
+    if (plusOffers.length && state.addons.ncd && !plusOffers.every((o) => o.campaign)) {
+      list.push('ส่วนลดประวัติดีสำหรับรถที่ไม่มีเคลม (ไม่ว่าฝ่ายถูกหรือฝ่ายผิด) พิจารณาประวัติตั้งแต่ปีรับประกันภัย 2558');
     }
     if (truck) list.push('ส่วนลดประวัติพิจารณาตามนโยบายของบริษัทฯ ไม่มีการให้ส่วนลดกลุ่ม');
-    if (plus || truck) list.push(`อัตราเบี้ย${scope ? `${scope.trim()} ` : ''}สำหรับรถที่ติดตั้งกล้องติดรถยนต์ที่บันทึกภาพเคลื่อนไหวได้`);
+    if (plusOffers.length || truck) list.push(`อัตราเบี้ย${scope ? `${scope.trim()} ` : ''}สำหรับรถที่ติดตั้งกล้องติดรถยนต์ที่บันทึกภาพเคลื่อนไหวได้`);
     list.push('คำนวณจากตารางอัตราเบี้ยของบริษัทฯ รวมภาษีมูลค่าเพิ่มและอากรแสตมป์แล้ว บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัยและเปลี่ยนแปลงอัตราเบี้ยโดยไม่ต้องแจ้งให้ทราบล่วงหน้า');
     return list;
   }
@@ -631,6 +634,14 @@
               <button class="${state.usage === 'commercial' ? 'is-on' : ''}" data-action="usage" data-value="commercial">เพื่อการพาณิชย์</button>
             </div>
           </div>` : ''}
+        ${custTypeApplicable(v) ? `
+          <div class="usage">
+            <span>ประเภทลูกค้า</span>
+            <div class="seg small">
+              <button class="${state.custType === 'new' ? 'is-on' : ''}" data-action="cust" data-value="new">ลูกค้าใหม่ 2569</button>
+              <button class="${state.custType === 'old' ? 'is-on' : ''}" data-action="cust" data-value="old">ลูกค้าเดิม</button>
+            </div>
+          </div>` : ''}
       </section>`;
   }
 
@@ -650,7 +661,7 @@
 
     const tabs = [['all', 'ทั้งหมด', offers.length], ['2+', 'ชั้น 2+', counts['2+']], ['3+', 'ชั้น 3+', counts['3+']], ['3', 'ชั้น 3', counts[3]]]
       .filter(([id, , n]) => id === 'all' || n > 0);
-    const withDeduct = v.body !== 'fridge' && shown.find((o) => o.type !== 'tawikoon' && o.pid !== 'plus2_euro' && o.pid !== 'plus3_euro');
+    const withDeduct = shown.find((o) => o.type === 'truck' || o.deductChoice);
 
     return `
       ${carSummary(v)}
@@ -685,7 +696,7 @@
     const sumField = o.type === 'plus'
       ? `<label class="sum-field">
           <span>ทุนรถชนรถ</span>
-          <select data-action="sum" data-pid="${o.pid}" aria-label="ทุนประกันรถชนรถ">
+          <select data-action="sum" data-fam="${o.family}" aria-label="ทุนประกันรถชนรถ">
             ${o.sums.map((s) => `<option value="${s}" ${s === o.sum ? 'selected' : ''}>${money(s)} บาท</option>`).join('')}
           </select>${icon('chev')}
         </label>`
@@ -767,7 +778,7 @@
           </select>${icon('chev')}
         </label>`);
     }
-    if (o.type !== 'tawikoon') {
+    if (o.type === 'truck' || o.deductChoice) {
       opts.push(`
         <label class="mini-select">
           <span>ค่าเสียหายส่วนแรก</span>
@@ -795,7 +806,8 @@
   function renderCheckout() {
     const v = vehicle();
     const offers = pickedOffers(v);
-    const anyPlus = offers.some((o) => o.type === 'plus');
+    const plusOffers = offers.filter((o) => o.type === 'plus');
+    const anyPlus = plusOffers.length > 0;
     const cmi = offers.map((o) => cmiAmount(o, v)).find(Boolean) || 0;
     const rules = R.plusRules;
     const totals = offers.map((o) => ({ o, p: pricing(o, v) }));
@@ -804,9 +816,21 @@
     const extras = [];
     if (anyPlus) {
       const note = offers.some((o) => o.type !== 'plus') ? '<small>ใช้กับแผนชั้น 2+ และ 3+</small>' : '';
-      extras.push(`
-        <p class="field-label">ส่วนลดประวัติดี${note || '<small>ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด</small>'}</p>
-        ${radioList('ncd', rules.noClaimDiscount.map((d) => [d.years, d.label, d.amount ? `-${money(d.amount)}` : '']), state.addons.ncd)}`);
+      const allCampaign = plusOffers.every((o) => o.campaign);
+      const maxTiers = Math.max(...plusOffers.map((o) => o.ncd.length));
+      if (allCampaign) {
+        extras.push(`<div class="notice">${icon('info')}<p>ส่วนลดไม่มีเคลมรวมอยู่ในเบี้ยแล้ว (แคมเปญลูกค้าใหม่ปี 2569)</p></div>`);
+      } else if (maxTiers > 1) {
+        const ncdOptions = rules.ncdLabels.slice(0, maxTiers).map((label, years) => {
+          if (years === 0) return [years, label, ''];
+          const amounts = plusOffers.map((o) => o.ncd[Math.min(years, o.ncd.length - 1)]);
+          const allSame = amounts.every((a) => a === amounts[0]);
+          return [years, label, allSame ? `-${money(amounts[0])}` : 'ตามแผน'];
+        });
+        extras.push(`
+          <p class="field-label">ส่วนลดประวัติดี${note || '<small>ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด</small>'}</p>
+          ${radioList('ncd', ncdOptions, state.addons.ncd)}`);
+      }
       extras.push(`
         <p class="field-label">ความคุ้มครองชีวิต ร่างกาย บุคคลภายนอก${note}</p>
         ${radioList('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, `${money(u.perPerson)} บาท/คน${u.amount ? '' : ' (มาตรฐาน)'}`, u.amount ? `+${money(u.amount)}` : '']), state.addons.tpbi)}`);
@@ -913,16 +937,13 @@
     }
     body.push(group('ความคุ้มครอง (บาท)'));
     rowsFor(offers).forEach((r) => {
-      body.push(row(rowLabel(r, offers), offers.map((o) => {
-        if (r.plus2Only && o.pid !== 'plus2') return cell(null);
-        return cell(coverageValue(r.id, o, v, tpbiFor(o)));
-      })));
+      body.push(row(rowLabel(r, offers), offers.map((o) => cell(coverageValue(r.id, o, v, tpbiFor(o))))));
     });
     body.push(group('เบี้ยประกันภัย (บาท)'));
     body.push(row('เบี้ยประกันภัย<small>รวมภาษีมูลค่าเพิ่มและอากรแสตมป์</small>', prices.map((p) => `<td>${money(p.premium)}</td>`)));
     if (prices.some((p) => p.ncd)) {
-      const ncd = R.plusRules.noClaimDiscount.find((x) => x.years === state.addons.ncd);
-      body.push(row(`ส่วนลดประวัติดี<small>${esc(ncd.label)}</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td class="minus">${signed(prices[i].ncd)}</td>` : dash))));
+      const label = R.plusRules.ncdLabels[state.addons.ncd];
+      body.push(row(`ส่วนลดประวัติดี<small>${esc(label)}</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td class="minus">${signed(prices[i].ncd)}</td>` : dash))));
     }
     if (prices.some((p) => p.tpbi)) {
       body.push(row(`เพิ่มวงเงินชีวิตบุคคลภายนอก<small>เป็น ${money(state.addons.tpbi)} บาท/คน</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td>${signed(prices[i].tpbi)}</td>` : dash))));
@@ -1028,8 +1049,7 @@
       lines.push(`   เบี้ยรวม ${money(p.total)} บาท`);
     });
     const extra = [];
-    const ncd = R.plusRules.noClaimDiscount.find((x) => x.years === state.addons.ncd);
-    if (ncd && ncd.amount && offers.some((o) => o.type === 'plus')) extra.push(`ส่วนลดประวัติดี ${money(ncd.amount)} บาท`);
+    if (state.addons.ncd && offers.some((o) => o.type === 'plus')) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[state.addons.ncd]}`);
     if (state.addons.tpbi !== 500000 && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
     if (state.addons.cmi) extra.push('รวม พ.ร.บ.');
     if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
@@ -1356,6 +1376,7 @@
         else go('search');
         break;
       case 'usage': state.usage = val; render(); break;
+      case 'cust': state.custType = val; render(); break;
       case 'filter': state.filter = val; render(); break;
       case 'deduct': state.deduct = val === '1'; render(); break;
       case 'pick': togglePick(val); break;
@@ -1369,7 +1390,7 @@
       case 'print': window.print(); break;
       case 'share': share(); break;
       case 'restart': {
-        state = { ...initialState(), deduct: state.deduct };
+        state = { ...initialState(), deduct: state.deduct, custType: state.custType };
         history.replaceState({ view: 'search', depth: 0 }, '', '#search');
         render();
         window.scrollTo(0, 0);
@@ -1390,7 +1411,7 @@
     const el = e.target;
     const action = el.dataset && el.dataset.action;
     if (action === 'sum') {
-      state.sums[el.dataset.pid.replace('_euro', '')] = Number(el.value);
+      state.sums[el.dataset.fam] = Number(el.value);
       render();
     } else if (action === 'pick-sum') {
       updatePick(Number(el.dataset.index), { sum: Number(el.value) });

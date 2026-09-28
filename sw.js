@@ -1,5 +1,5 @@
 // ใช้แบบ network-first: ออนไลน์ได้อัตราเบี้ยล่าสุดเสมอ ออฟไลน์ใช้ไฟล์ที่เก็บไว้
-const CACHE = 'mt-quote-v4';
+const CACHE = 'mt-quote-v5';
 const ASSETS = [
   './',
   './index.html',
