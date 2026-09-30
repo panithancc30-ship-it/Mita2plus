@@ -160,6 +160,10 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 }
 
 .finder { margin-top: -48px; position: relative; padding: 18px 16px 20px; }
+.seg.vtype { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; margin-bottom: 16px; }
+.seg.vtype button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 6px; font-size: 16px; }
+.seg.vtype .ic { width: 24px; height: 24px; }
+.seg.vtype button.is-on .ic { color: var(--green-700); }
 .progress { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-bottom: 14px; }
 .progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--green-600), var(--yellow)); border-radius: inherit; transition: width 0.3s; }
 .finder-title { font-size: 19px; font-weight: 700; text-align: center; }
@@ -389,6 +393,7 @@ body:not([data-view="search"]) main { padding-top: 16px; }
   cursor: pointer;
 }
 .sum-field .ic { position: absolute; right: 10px; pointer-events: none; color: var(--green-700); width: 18px; height: 18px; }
+.sum-field span small { display: block; font-size: 12px; color: var(--muted); line-height: 1.2; }
 
 .hl { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
 .hl li { display: flex; gap: 8px; font-size: 14px; line-height: 1.4; }
@@ -633,6 +638,7 @@ body[data-view="plans"] main { padding-bottom: calc(150px + var(--safe-bottom));
 .qp-car { margin: 0; display: grid; grid-template-columns: 1.3fr 0.8fr 1.6fr 1fr; gap: 0 18px; }
 .qp-car dt { font-size: 0.8em; color: var(--muted); }
 .qp-car dd { margin: 0; font-weight: 600; }
+.qp-car.is-moto { grid-template-columns: 1.3fr 1fr 1.5fr; gap: 0.35em 18px; }
 
 .qp-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-variant-numeric: tabular-nums; }
 .qp-table th, .qp-table td { padding: 0.36em 8px; border-bottom: 1px solid #e6ece8; vertical-align: middle; }

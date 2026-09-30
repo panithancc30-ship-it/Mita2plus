@@ -7,6 +7,11 @@
     ...b,
     models: b.models.map(([name, kind, from, to]) => ({ name, kind, from, to })),
   }));
+  const MOTO_BRANDS = window.MT_MOTO_BRANDS.map((b) => ({
+    ...b,
+    group: 'moto',
+    models: b.models.map(([name, cc, from, to]) => ({ name, kind: 'moto', cc, from, to })),
+  }));
   const THIS_YEAR = new Date().getFullYear();
   const OLDEST_YEAR = THIS_YEAR - 30;
   const STORE_KEY = 'mt-quote-state-v2';
@@ -22,13 +27,25 @@
     van: { label: 'รถตู้ (ไม่เกิน 15 ที่นั่ง)', short: 'รถตู้' },
     truck6: { label: 'รถบรรทุก 6 ล้อ (ไม่เกิน 12 ตัน)', short: 'บรรทุก 6 ล้อ' },
     truck10: { label: 'รถบรรทุก 10 ล้อ (เกิน 12 ตัน)', short: 'บรรทุก 10 ล้อ' },
+    moto: { label: 'รถจักรยานยนต์', short: 'มอเตอร์ไซค์' },
   };
+  const CAR_KINDS = ['car', 'pickup', 'van', 'truck6', 'truck10'];
+  // แท็บประเภทประกันในหน้าแรก — ประกันอื่น (เช่น อัคคีภัย) เพิ่มต่อท้ายที่นี่
+  const VTYPES = {
+    car: { label: 'รถยนต์', icon: 'car', noun: 'รถยนต์', brandHint: 'ค้นหายี่ห้อ เช่น Toyota, BYD', modelHint: 'เช่น Corolla Altis' },
+    moto: { label: 'มอเตอร์ไซค์', icon: 'moto', noun: 'มอเตอร์ไซค์', brandHint: 'ค้นหายี่ห้อ เช่น Honda, Yamaha', modelHint: 'เช่น Wave 125i' },
+  };
+  // รุ่นมอเตอร์ไซค์ที่ไม่มีในรายการ: เลือกช่วงขนาดเครื่องยนต์ เก็บเป็น cc สูงสุดของช่วง
+  const CC_CHOICES = [[110, 'ไม่เกิน 110 cc'], [125, '111 – 125 cc'], [150, '126 – 150 cc'], [200, '151 – 200 cc'], [250, 'เกิน 200 cc']];
   const BODY_LABEL = {
     standard: 'กระบะทั่วไป',
     fridge: 'ต่อเติมตู้เย็น',
     plain: 'ไม่มีอุปกรณ์พิเศษ',
     equip: 'มีอุปกรณ์พิเศษ',
+    reg4: 'จดทะเบียน กทม./สมุทรปราการ/อุบลฯ/นครสวรรค์',
+    regOther: 'จดทะเบียนจังหวัดอื่น',
   };
+  const REG_LABEL = { reg4: 'กทม. สมุทรปราการ อุบลฯ นครสวรรค์', regOther: 'จังหวัดอื่นๆ' };
   const TIER_TH = { PLATINUM: 'แพลทินัม', GOLD: 'โกลด์', SILVER: 'ซิลเวอร์' };
   const CLS_CLASS = { '2+': 'c2p', '3+': 'c3p', 3: 'c3' };
   const CLS_ORDER = { '2+': 0, '3+': 1, 3: 2 };
@@ -61,6 +78,7 @@
     image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.7"/><path d="M20.5 16l-5-5-9 8.5"/>',
     car: '<path d="M3.5 16.5v-4.2L5.8 7h12.4l2.3 5.3v4.2z"/><path d="M3.5 12.3h17"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/>',
     truck: '<path d="M2.5 6.5h11v10h-11zM13.5 10h4.5l3.5 3.5v3h-8z"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+    moto: '<circle cx="5.5" cy="16" r="3.5"/><circle cx="18.5" cy="16" r="3.5"/><path d="M5.5 16h6l3.5-6"/><path d="M18.5 16L15 6.5h-2.5"/><path d="M7.5 10.5h5"/>',
     shield: '<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/><path d="M8.7 12l2.3 2.3 4.3-4.6"/>',
     refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/>',
     phone: '<path d="M5.5 3.5h3.2l1.8 4.6-2.2 1.4a11.5 11.5 0 006.2 6.2l1.4-2.2 4.6 1.8v3.2a2 2 0 01-2.1 2A16.5 16.5 0 013.5 5.6a2 2 0 012-2.1z"/>',
@@ -71,19 +89,21 @@
   // ---------- state ----------
   const initialState = () => ({
     view: 'search',
+    vtype: 'car', // แท็บประเภทประกัน (VTYPES)
     brandId: null,
     customBrand: '',
     modelName: null,
     customModel: false,
     customModelName: '',
     customKind: null,
+    customCc: null, // มอเตอร์ไซค์รุ่นที่ไม่มีในรายการ (CC_CHOICES)
     year: null,
-    body: null,
+    body: null, // ขั้นที่ 4: ลักษณะรถกระบะ / อุปกรณ์รถบรรทุก / จังหวัดที่จดทะเบียนมอเตอร์ไซค์
     usage: 'personal',
     custType: 'new', // 'new' = ลูกค้าใหม่ปี 2569, 'old' = ลูกค้าเดิม — ใช้กับ ป.2+/ป.3+ ญี่ปุ่น/รถตลาดเท่านั้น
     deduct: true,
     filter: 'all',
-    sums: { plus2: 100000, plus3: 100000 },
+    sums: { plus2: 100000, plus3: 100000, moto: 10000 },
     // แผนที่เลือกลงใบเสนอราคา: { key, sum (เฉพาะ 2+/3+), deduct (null = ไม่มีตัวเลือก Deduct) }
     picks: [],
     picksSig: null,
@@ -102,19 +122,26 @@
     try { sessionStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   };
 
+  const isMotoTab = () => state.vtype === 'moto';
+  const brandList = () => (isMotoTab() ? MOTO_BRANDS : BRANDS);
+
   function getBrand() {
     if (state.brandId === 'other') {
       return { id: 'other', name: state.customBrand || 'ยี่ห้ออื่นๆ', th: '', group: 'other', models: [] };
     }
-    return BRANDS.find((b) => b.id === state.brandId) || null;
+    return brandList().find((b) => b.id === state.brandId) || null;
   }
 
   function getModel() {
     const brand = getBrand();
     if (!brand) return null;
-    if (state.customModel) return { name: state.customModelName.trim(), kind: state.customKind, custom: true };
+    if (state.customModel) return { name: state.customModelName.trim(), kind: state.customKind, cc: state.customCc, custom: true };
     return brand.models.find((m) => m.name === state.modelName) || null;
   }
+
+  const ccLabel = (m) => (m.custom ? (CC_CHOICES.find(([cc]) => cc === m.cc) || [])[1] : `${m.cc} cc`);
+  const vehicleIcon = (v) => (v.kind === 'moto' ? 'moto' : v.kind.startsWith('truck') ? 'truck' : 'car');
+  const usageTh = () => (state.usage === 'commercial' ? 'เพื่อการพาณิชย์' : 'ส่วนบุคคล');
 
   function yearsFor(model) {
     const from = Math.max(model && model.from ? model.from : OLDEST_YEAR, OLDEST_YEAR);
@@ -124,20 +151,22 @@
     return ys;
   }
 
-  const needsBody = (kind) => kind === 'pickup' || kind === 'truck6' || kind === 'truck10';
+  const needsBody = (kind) => kind === 'pickup' || kind === 'truck6' || kind === 'truck10' || kind === 'moto';
 
   function isComplete() {
     const m = getModel();
     return !!(getBrand() && m && m.kind && state.year && (!needsBody(m.kind) || state.body));
   }
 
-  const carSig = () => JSON.stringify([state.brandId, state.customBrand, state.modelName, state.customModel, state.customKind, state.year, state.body]);
+  const carSig = () => JSON.stringify([state.vtype, state.brandId, state.customBrand, state.modelName, state.customModel, state.customKind, state.customCc, state.year, state.body]);
 
   function vehicle() {
     const brand = getBrand();
     const model = getModel();
     const kind = model.kind;
-    const code = kind === 'car' ? (state.usage === 'commercial' ? '120' : '110') : kind === 'van' ? '210' : '320';
+    const commercial = state.usage === 'commercial';
+    const code = kind === 'moto' ? (commercial ? '620' : '610')
+      : kind === 'car' ? (commercial ? '120' : '110') : kind === 'van' ? '210' : '320';
     return {
       brand,
       model,
@@ -170,16 +199,81 @@
   }
 
   function plusBlockReason(v) {
+    if (v.kind === 'moto') return null;
     if (v.kind !== 'car' && v.kind !== 'pickup') return 'ป.2+ และ ป.3+ รับเฉพาะรถเก๋ง (รหัส 110/120) และรถกระบะไม่เกิน 4 ตัน (รหัส 320)';
     if (v.brand.group === 'super') return `${v.brand.name} เป็นรถกลุ่ม Super Car ไม่สามารถซื้อตามตารางเบี้ยได้ กรุณาติดต่อฝ่ายรับประกันภัย`;
     if (v.brand.group === 'luxury' && v.code !== '110') return `${v.brand.name} ที่ใช้เพื่อการพาณิชย์ไม่อยู่ในตารางเบี้ย ป.2+ / ป.3+ กรุณาติดต่อฝ่ายรับประกันภัย`;
     return null;
   }
 
+  // มอเตอร์ไซค์: 2+/3+ เฉพาะรหัส 610 ตามอายุรถ · ป.3 ได้ทั้ง 610/620 · เกิน 200cc ไม่อยู่ในตาราง
+  function motoOffers(v, sums) {
+    const M = R.moto;
+    if (v.model.cc > M.maxCc) return [];
+    const table = v.body === 'reg4' ? 'normal' : 'special';
+    const offers = [];
+
+    if (v.code === '610') {
+      const sum = M.sums.includes(sums.moto) ? sums.moto : M.sums[0];
+      Object.keys(M.plus).forEach((pid) => {
+        const p = M.plus[pid];
+        if (v.age > p.maxAge) return;
+        const cap = p.theftCap && v.age >= p.theftCap.fromAge ? p.theftCap.max : Infinity;
+        Object.keys(M.plans).forEach((plan) => {
+          offers.push({
+            key: `${pid}.${plan}`,
+            type: 'moto',
+            own: true, // คุ้มครองตัวรถ (ชนกับยานพาหนะทางบก)
+            pid,
+            family: 'moto',
+            tier: null,
+            cls: p.cls,
+            product: p.name,
+            planTh: M.plans[plan].label,
+            planShort: M.plans[plan].short,
+            sum,
+            sums: M.sums,
+            theftSum: p.theftFire ? Math.min(sum, cap) : 0,
+            deductible: 0,
+            price: p.rates[table][plan],
+            special: table === 'special',
+            cov: { ...M.plans[plan].coverage, theftFire: p.theftFire },
+          });
+        });
+      });
+    }
+
+    const t = M.type3;
+    const small = v.model.cc <= M.smallCc;
+    offers.push({
+      key: 'moto_t3',
+      type: 'moto',
+      own: false,
+      tier: null,
+      cls: t.cls,
+      product: t.name,
+      planTh: `ขนาด${small ? 'ไม่เกิน' : 'เกิน'} ${M.smallCc} cc`,
+      price: t.rates[v.code][table][small ? 0 : 1],
+      special: v.code === '610' && table === 'special',
+      cov: t.coverage,
+    });
+    return offers;
+  }
+
+  function motoNotices(v) {
+    const M = R.moto;
+    if (v.model.cc > M.maxCc) return [`รถจักรยานยนต์ขนาดเกิน ${M.maxCc} cc ไม่อยู่ในตารางเบี้ย กรุณาติดต่อฝ่ายรับประกันภัย`];
+    if (v.code !== '610') return ['รถใช้เพื่อการพาณิชย์ (รหัส 620) ซื้อได้เฉพาะชั้น 3 · ชั้น 2+ และ 3+ รับเฉพาะรถใช้ส่วนบุคคล'];
+    const out = Object.values(M.plus).filter((p) => v.age > p.maxAge);
+    if (!out.length) return [];
+    return [`รถอายุ ${v.age} ปี ซื้อชั้น ${out.map((p) => p.cls).join(' / ')} ไม่ได้ (${out.map((p) => `ชั้น ${p.cls} รับรถอายุไม่เกิน ${p.maxAge} ปี`).join(' · ')})`];
+  }
+
   // opts.sums / opts.deduct ใช้คำนวณแผนที่เลือกไว้แล้ว ถ้าไม่ส่งมาจะใช้ค่าที่แสดงอยู่ในหน้ารายการแผน
   function buildOffers(v, opts) {
     const sums = (opts && opts.sums) || state.sums;
     const deduct = opts && 'deduct' in opts ? opts.deduct : state.deduct;
+    if (v.kind === 'moto') return motoOffers(v, sums).sort((a, b) => a.price - b.price);
     const offers = [];
 
     plusProducts(v).forEach((pid) => {
@@ -251,18 +345,22 @@
     return offers.sort((a, b) => a.price - b.price);
   }
 
+  // แผนที่คุ้มครองตัวรถตามทุนประกัน / แผนที่มีเรื่องค่าเสียหายส่วนแรก (Deduct)
+  const hasSum = (o) => o.type === 'plus' || (o.type === 'moto' && o.own);
+  const hasDeduct = (o) => o.type === 'plus' || o.type === 'truck' || (o.type === 'moto' && o.own);
+
   // ---------- picks (หลายแผนในใบเสนอราคาเดียว) ----------
   const pickFromOffer = (o) => ({
     key: o.key,
-    sum: o.type === 'plus' ? o.sum : null,
-    deduct: o.type === 'tawikoon' ? null : o.deductible > 0,
+    sum: hasSum(o) ? o.sum : null,
+    deduct: o.type === 'tawikoon' || o.type === 'moto' ? null : o.deductible > 0,
   });
   const pickId = (p) => `${p.key}|${p.sum || ''}|${p.deduct === null ? '' : p.deduct ? 1 : 0}`;
 
   function resolvePick(v, p) {
-    const sums = p.sum ? { plus2: p.sum, plus3: p.sum } : state.sums;
+    const sums = p.sum ? { plus2: p.sum, plus3: p.sum, moto: p.sum } : state.sums;
     const o = buildOffers(v, { sums, deduct: p.deduct !== false }).find((x) => x.key === p.key);
-    if (!o || (o.type === 'plus' && o.sum !== p.sum)) return null;
+    if (!o || (hasSum(o) && o.sum !== p.sum)) return null;
     return o;
   }
 
@@ -284,12 +382,13 @@
   const isPicked = (o) => state.picks.some((p) => pickId(p) === pickId(pickFromOffer(o)));
 
   const shortName = (o) => {
-    if (o.type === 'plus' && !o.tier) return `ชั้น ${o.cls}`;
+    if ((o.type === 'plus' && !o.tier) || o.type === 'moto') return `ชั้น ${o.cls}`;
     return `ชั้น ${o.cls} ${o.tier || (o.type === 'truck' ? 'รถบรรทุก' : 'ทวีคูณ')}`;
   };
 
   function pickDetail(o) {
     const d = o.deductible ? `Deduct ${money(o.deductible)}` : 'ไม่มี Deduct';
+    if (o.type === 'moto' && o.own) return `${o.planShort} · ทุน ${money(o.sum)}`;
     if (o.type === 'plus') return `ทุน ${money(o.sum)} · ${d}`;
     if (o.type === 'truck') return `ทรัพย์สิน ${money(o.cov.tppd)} · ${d}`;
     return o.planTh;
@@ -299,12 +398,13 @@
   function seatsFor(o, v) {
     if (o.type === 'plus') return v.code === '320' ? 3 : 5;
     if (o.type === 'truck') return 3;
+    if (o.type === 'moto') return 2;
     return null;
   }
 
   const COVERAGE_ROWS = [
     { id: 'own', label: 'ความเสียหายต่อตัวรถ', plusSub: 'เฉพาะชนกับยานพาหนะทางบก' },
-    { id: 'theft', label: 'รถยนต์สูญหาย / ไฟไหม้' },
+    { id: 'theft', label: 'รถยนต์สูญหาย / ไฟไหม้', motoLabel: 'รถจักรยานยนต์สูญหาย / ไฟไหม้' },
     { id: 'tpbi', label: 'ชีวิต ร่างกาย บุคคลภายนอก' },
     { id: 'tppd', label: 'ทรัพย์สินบุคคลภายนอก' },
     { id: 'tppdDeduct', label: 'ค่าเสียหายส่วนแรก (ทรัพย์สินคู่กรณี)', tppdDeductOnly: true },
@@ -321,8 +421,8 @@
     const seats = seatsFor(o, v);
     const seatTxt = seats ? `<br><small>ไม่เกิน ${seats} ที่นั่ง</small>` : '';
     switch (id) {
-      case 'own': return o.type === 'plus' ? `ตามทุน ${money(o.sum)}` : null;
-      case 'theft': return o.type === 'plus' && c.theftFire ? `ตามทุน ${money(o.sum)}` : null;
+      case 'own': return hasSum(o) ? `ตามทุน ${money(o.sum)}` : null;
+      case 'theft': return hasSum(o) && c.theftFire ? `ตามทุน ${money(o.theftSum || o.sum)}` : null;
       case 'tpbi': return `${money(tpbiPerson || c.tpbiPerson)} /คน<br>${money(c.tpbiTime)} /ครั้ง`;
       case 'tppd': return `${money(c.tppd)} /ครั้ง` + (o.type === 'truck' && o.deductible ? `<br><small>ค่าเสียหายส่วนแรก ${money(o.deductible)}</small>` : '');
       case 'tppdDeduct': return o.tppdDeduct ? `${money(o.tppdDeduct)} /ครั้ง` : null;
@@ -336,8 +436,9 @@
   }
 
   function rowLabel(row, offers) {
-    const sub = row.plusSub ? (offers.some((o) => o.type === 'plus') ? row.plusSub : '') : row.sub;
-    return `${row.label}${sub ? `<small>${sub}</small>` : ''}`;
+    const label = row.motoLabel && offers.some((o) => o.type === 'moto') ? row.motoLabel : row.label;
+    const sub = row.plusSub ? (offers.some(hasSum) ? row.plusSub : '') : row.sub;
+    return `${label}${sub ? `<small>${sub}</small>` : ''}`;
   }
 
   function rowsFor(offers) {
@@ -359,6 +460,14 @@
       if (c.dailyComp) list.push([true, `ชดเชยรายได้ ${money(c.dailyComp)} บาท/วัน + ค่าเดินทาง`]);
       return list;
     }
+    if (o.type === 'moto' && o.own) {
+      return [
+        [true, `ชนกับยานพาหนะทางบก ซ่อมรถคุณตามทุน ${money(o.sum)}`],
+        c.theftFire ? [true, `รถหาย / ไฟไหม้ คุ้มครอง ${money(o.theftSum)} บาท`] : [false, 'ไม่คุ้มครองรถหาย / ไฟไหม้'],
+        c.med ? [true, `ค่ารักษาพยาบาล ${money(c.med)} บาท/คน`] : [false, 'ไม่มีค่ารักษาพยาบาล'],
+        [true, 'ไม่มีค่าเสียหายส่วนแรก'],
+      ];
+    }
     if (o.type === 'tawikoon') {
       return [
         [false, 'ไม่คุ้มครองความเสียหายของรถคุณ'],
@@ -375,6 +484,14 @@
 
   function offerNotes(o, v) {
     const notes = [];
+    if (o.type === 'moto') {
+      notes.push({ icon: 'camera', text: 'ราคาสำหรับรถที่ติดกล้องบันทึกภาพ' });
+      const cap = o.own && R.moto.plus[o.pid].theftCap;
+      if (cap && v.age >= cap.fromAge) notes.push({ icon: 'info', text: `รถอายุ ${v.age} ปี ทุนรถหาย / ไฟไหม้ไม่เกิน ${money(cap.max)} บาท` });
+      if (o.own) notes.push({ icon: 'info', text: 'ไม่ต้องถ่ายรูปรถ บันทึกใบเสนอราคาให้หน่วยงานรับประกันภัยพิจารณาอนุมัติ' });
+      else notes.push({ icon: 'info', text: 'ไม่รับประกันภัยรถจักรยานยนต์รับจ้างสาธารณะ' });
+      return notes;
+    }
     if (o.type !== 'tawikoon') notes.push({ icon: 'camera', text: 'ราคาสำหรับรถที่ติดกล้องติดรถยนต์' });
     if (o.type === 'plus' && v.age > R.plusRules.maxAge) {
       notes.push({ icon: 'alert', warn: true, text: `รถอายุ ${v.age} ปี (เกิน ${R.plusRules.maxAge} ปี) ต้องส่งพิจารณาอนุมัติ` });
@@ -390,6 +507,7 @@
   }
 
   function cmiAmount(o, v) {
+    if (v.kind === 'moto') return R.moto.compulsory.find(([maxCc]) => v.model.cc <= maxCc)[1];
     return o.type === 'truck' ? 0 : R.compulsory[v.code] || 0;
   }
 
@@ -407,7 +525,33 @@
     return p;
   }
 
+  const RESERVE_NOTE = 'คำนวณจากตารางอัตราเบี้ยของบริษัทฯ รวมภาษีมูลค่าเพิ่มและอากรแสตมป์แล้ว บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัยและเปลี่ยนแปลงอัตราเบี้ยโดยไม่ต้องแจ้งให้ทราบล่วงหน้า';
+
+  function motoConditions(v, offers) {
+    const M = R.moto;
+    const own = offers.filter((o) => o.own);
+    const t3 = offers.some((o) => !o.own);
+    const list = [];
+    if (own.length) {
+      const products = [...new Set(own.map((o) => o.pid))].map((pid) => M.plus[pid]);
+      const scope = `ชั้น ${products.map((p) => p.cls).join(' / ')}`;
+      list.push(`${scope} สำหรับรถจักรยานยนต์ใช้ส่วนบุคคล (รหัส 610) ขนาดไม่เกิน ${M.maxCc} cc `
+        + products.map((p) => `ชั้น ${p.cls} อายุรถไม่เกิน ${p.maxAge} ปี`).join(' '));
+      const theft = products.find((p) => p.theftFire);
+      list.push(`ทุนประกันภัยรถชนรถคิดที่ 60% ของราคาตลาด แต่ไม่เกิน ${money(M.sums[0])} บาท`
+        + (theft ? ` ชั้น ${theft.cls} คุ้มครองรถสูญหาย / ไฟไหม้ตามทุนรถชนรถ (รถอายุ ${theft.theftCap.fromAge}–${theft.maxAge} ปี ไม่เกิน ${money(theft.theftCap.max)} บาท)` : '')
+        + ' ไม่มีค่าเสียหายส่วนแรกของความเสียหายต่อรถจักรยานยนต์คันเอาประกันภัย');
+    }
+    if (t3) list.push(`${own.length ? 'ชั้น 3 ' : ''}สำหรับรถจักรยานยนต์ใช้ส่วนบุคคล (รหัส 610) และใช้เพื่อการพาณิชย์ (รหัส 620) ขนาดไม่เกิน ${M.maxCc} cc ไม่รับประกันภัยรถรับจ้างสาธารณะ`);
+    if (offers.some((o) => o.special)) list.push('ราคาพิเศษสำหรับรถที่ไม่ได้จดทะเบียนในกรุงเทพฯ สมุทรปราการ อุบลราชธานี และนครสวรรค์');
+    list.push(`ไม่มีส่วนลดประวัติ${t3 ? ' และไม่มีการให้ส่วนลดกลุ่ม' : ''} บริษัทฯ จะตรวจสอบประวัติการใช้รถ ซึ่งอาจส่งผลให้เปลี่ยนแปลงเบี้ยประกันภัย เงื่อนไข หรืองดรับประกันภัย`);
+    list.push('อัตราเบี้ยสำหรับรถที่ติดตั้งกล้องที่บันทึกภาพเคลื่อนไหวได้');
+    list.push(RESERVE_NOTE);
+    return list;
+  }
+
   function quoteConditions(v, offers) {
+    if (v.kind === 'moto') return motoConditions(v, offers);
     const plusOffers = offers.filter((o) => o.type === 'plus');
     const truck = offers.some((o) => o.type === 'truck');
     const mixed = plusOffers.length && offers.some((o) => o.type !== 'plus');
@@ -438,7 +582,7 @@
     }
     if (truck) list.push('ส่วนลดประวัติพิจารณาตามนโยบายของบริษัทฯ ไม่มีการให้ส่วนลดกลุ่ม');
     if (plusOffers.length || truck) list.push(`อัตราเบี้ย${scope ? `${scope.trim()} ` : ''}สำหรับรถที่ติดตั้งกล้องติดรถยนต์ที่บันทึกภาพเคลื่อนไหวได้`);
-    list.push('คำนวณจากตารางอัตราเบี้ยของบริษัทฯ รวมภาษีมูลค่าเพิ่มและอากรแสตมป์แล้ว บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัยและเปลี่ยนแปลงอัตราเบี้ยโดยไม่ต้องแจ้งให้ทราบล่วงหน้า');
+    list.push(RESERVE_NOTE);
     return list;
   }
 
@@ -508,16 +652,21 @@
     const total = bodyNeeded ? 4 : 3;
     const done = [!!brand, modelOk, !!state.year, bodyNeeded && !!state.body].filter(Boolean).length;
     const complete = isComplete();
+    const vt = VTYPES[state.vtype];
 
     return `
       <section class="hero">
         <p class="hero-kicker">${icon('shield')} มิตรแท้ประกันภัย</p>
-        <h1>เช็คเบี้ยประกันรถยนต์<br><span>รู้ราคาทันที พร้อมใบเสนอราคา</span></h1>
+        <h1>เช็คเบี้ยประกัน${vt.noun}<br><span>รู้ราคาทันที พร้อมใบเสนอราคา</span></h1>
         <div class="hero-classes"><span>ชั้น 2+</span><span>ชั้น 3+</span><span>ชั้น 3</span></div>
       </section>
       <section class="card finder">
+        <div class="seg vtype" role="tablist" aria-label="ประเภทประกัน">
+          ${Object.keys(VTYPES).map((k) => `
+            <button role="tab" class="${state.vtype === k ? 'is-on' : ''}" data-action="vtype" data-value="${k}" aria-selected="${state.vtype === k}">${icon(VTYPES[k].icon)}${VTYPES[k].label}</button>`).join('')}
+        </div>
         <div class="progress" aria-hidden="true"><i style="width:${Math.round((done / total) * 100)}%"></i></div>
-        <h2 class="finder-title">ค้นหาแผนประกันรถยนต์</h2>
+        <h2 class="finder-title">ค้นหาแผนประกัน${vt.noun}</h2>
         ${stepBrand(brand)}
         ${brand ? stepModel(brand, model) : ''}
         ${modelOk ? stepYear(model) : ''}
@@ -538,7 +687,7 @@
   }
 
   function stepBrand(brand) {
-    const popular = BRANDS.filter((b) => b.popular);
+    const popular = brandList().filter((b) => b.popular);
     const inGrid = brand && popular.some((p) => p.id === brand.id);
     return `
       <div class="step" id="step-brand">
@@ -560,8 +709,12 @@
     const hasList = brand.models.length > 0;
     const top = brand.models.slice(0, TOP_MODELS);
     if (model && !model.custom && !top.includes(model)) top.push(model);
-    const kindChips = Object.keys(KINDS).map((k) => `
-      <button class="chip ${state.customKind === k ? 'is-on' : ''}" data-action="kind" data-value="${k}" aria-pressed="${state.customKind === k}">${KINDS[k].label}</button>`).join('');
+    const moto = isMotoTab();
+    const kindChips = moto
+      ? CC_CHOICES.map(([cc, label]) => `
+        <button class="chip ${state.customCc === cc ? 'is-on' : ''}" data-action="cc" data-value="${cc}" aria-pressed="${state.customCc === cc}">${label}</button>`).join('')
+      : CAR_KINDS.map((k) => `
+        <button class="chip ${state.customKind === k ? 'is-on' : ''}" data-action="kind" data-value="${k}" aria-pressed="${state.customKind === k}">${KINDS[k].label}</button>`).join('');
 
     return `
       <div class="step" id="step-model">
@@ -577,9 +730,9 @@
           <div class="custom-box">
             <label class="field">
               <span>ชื่อรุ่นรถ <small>(ไม่บังคับ)</small></span>
-              <input id="customModelName" type="text" value="${esc(state.customModelName)}" placeholder="เช่น Corolla Altis" autocomplete="off" maxlength="40">
+              <input id="customModelName" type="text" value="${esc(state.customModelName)}" placeholder="${VTYPES[state.vtype].modelHint}" autocomplete="off" maxlength="40">
             </label>
-            <p class="field-label">ประเภทรถ</p>
+            <p class="field-label">${moto ? 'ขนาดเครื่องยนต์' : 'ประเภทรถ'}</p>
             <div class="chip-grid one-col">${kindChips}</div>
           </div>` : ''}
       </div>`;
@@ -591,7 +744,7 @@
     if (state.year && !top.includes(state.year)) top.push(state.year);
     return `
       <div class="step" id="step-year">
-        ${stepHead(3, 'เลือกปีรถยนต์', !!state.year)}
+        ${stepHead(3, `เลือกปี${VTYPES[state.vtype].noun}`, !!state.year)}
         <div class="chip-grid">
           ${top.map((y) => `<button class="chip ${state.year === y ? 'is-on' : ''}" data-action="year" data-value="${y}" aria-pressed="${state.year === y}">${yearLabel(y)}</button>`).join('')}
         </div>
@@ -600,13 +753,13 @@
   }
 
   function stepBody(kind) {
-    const pickup = kind === 'pickup';
-    const opts = pickup
-      ? [['standard', 'กระบะทั่วไป', 'ไม่ได้ต่อเติมตู้เย็น'], ['fridge', 'ต่อเติมตู้เย็น', 'มี / ไม่มีเครื่องทำความเย็น']]
-      : [['plain', 'ไม่มีอุปกรณ์พิเศษ', 'ตัวรถมาตรฐาน'], ['equip', 'มีอุปกรณ์พิเศษ', 'ติดตั้งอุปกรณ์พิเศษเพิ่มบนตัวรถ']];
+    const [title, opts] = {
+      pickup: ['ลักษณะรถกระบะ', [['standard', 'กระบะทั่วไป', 'ไม่ได้ต่อเติมตู้เย็น'], ['fridge', 'ต่อเติมตู้เย็น', 'มี / ไม่มีเครื่องทำความเย็น']]],
+      moto: ['จังหวัดที่จดทะเบียน', [['reg4', 'กรุงเทพฯ สมุทรปราการ อุบลราชธานี นครสวรรค์', 'ราคาปกติ'], ['regOther', 'จังหวัดอื่นๆ', 'ได้ราคาพิเศษ (รถใช้ส่วนบุคคล)']]],
+    }[kind] || ['อุปกรณ์พิเศษ', [['plain', 'ไม่มีอุปกรณ์พิเศษ', 'ตัวรถมาตรฐาน'], ['equip', 'มีอุปกรณ์พิเศษ', 'ติดตั้งอุปกรณ์พิเศษเพิ่มบนตัวรถ']]];
     return `
       <div class="step" id="step-body">
-        ${stepHead(4, pickup ? 'ลักษณะรถกระบะ' : 'อุปกรณ์พิเศษ', !!state.body)}
+        ${stepHead(4, title, !!state.body)}
         <div class="option-list">
           ${opts.map(([val, title, desc]) => `
             <button class="option ${state.body === val ? 'is-on' : ''}" data-action="body" data-value="${val}" aria-pressed="${state.body === val}">
@@ -618,15 +771,16 @@
 
   function carSummary(v) {
     const meta = [`ปี ${yearLabel(v.year)}`, KINDS[v.kind].short, `รหัส ${v.code}`];
+    if (v.kind === 'moto') meta.push(ccLabel(v.model));
     if (v.body) meta.push(BODY_LABEL[v.body]);
     return `
       <section class="card car-summary">
         <div class="car-row">
-          <span class="car-ico">${icon(v.kind.startsWith('truck') ? 'truck' : 'car')}</span>
+          <span class="car-ico">${icon(vehicleIcon(v))}</span>
           <div class="car-text"><b>${esc(v.name)}</b><small>${meta.join(' · ')}</small></div>
           <button class="link-btn" data-action="edit-car">แก้ไข</button>
         </div>
-        ${v.kind === 'car' ? `
+        ${v.kind === 'car' || v.kind === 'moto' ? `
           <div class="usage">
             <span>การใช้รถ</span>
             <div class="seg small">
@@ -655,7 +809,8 @@
     const block = plusBlockReason(v);
     const notices = [];
     if (block && !v.kind.startsWith('truck')) notices.push(block);
-    if (v.brand.group === 'other' || (v.model && v.model.custom)) {
+    if (v.kind === 'moto') notices.push(...motoNotices(v));
+    else if (v.brand.group === 'other' || (v.model && v.model.custom)) {
       notices.push('รถที่ไม่มีในรายการ บริษัทฯ จะพิจารณาการรับประกันภัยอีกครั้ง (ป.2+ / ป.3+ รับเฉพาะรถญี่ปุ่น รถตลาด และรถยุโรป/นำเข้า เท่านั้น)');
     }
 
@@ -693,15 +848,15 @@
   }
 
   function offerCard(o, v) {
-    const sumField = o.type === 'plus'
+    const sumField = hasSum(o)
       ? `<label class="sum-field">
-          <span>ทุนรถชนรถ</span>
+          <span>ทุนรถชนรถ${o.type === 'moto' ? '<small>60% ของราคาตลาด</small>' : ''}</span>
           <select data-action="sum" data-fam="${o.family}" aria-label="ทุนประกันรถชนรถ">
             ${o.sums.map((s) => `<option value="${s}" ${s === o.sum ? 'selected' : ''}>${money(s)} บาท</option>`).join('')}
           </select>${icon('chev')}
         </label>`
       : '';
-    const deductTag = o.type === 'tawikoon' ? '' : `<span class="tag">${o.deductible ? `Deduct ${money(o.deductible)}` : 'ไม่มี Deduct'}</span>`;
+    const deductTag = hasDeduct(o) ? `<span class="tag">${o.deductible ? `Deduct ${money(o.deductible)}` : 'ไม่มี Deduct'}</span>` : '';
     const notes = offerNotes(o, v);
     const picked = isPicked(o);
     const rows = rowsFor([o]);
@@ -769,7 +924,7 @@
 
   function pickCard(o) {
     const opts = [];
-    if (o.type === 'plus') {
+    if (hasSum(o)) {
       opts.push(`
         <label class="mini-select">
           <span>ทุนรถชนรถ</span>
@@ -838,7 +993,7 @@
     if (cmi) {
       extras.push(`
         <button class="toggle-row ${state.addons.cmi ? 'is-on' : ''}" data-action="cmi" aria-pressed="${state.addons.cmi}">
-          <span><b>ซื้อรวม พ.ร.บ.</b><small>ประกันภาคบังคับ รหัส ${v.code}</small></span>
+          <span><b>ซื้อรวม พ.ร.บ.</b><small>ประกันภาคบังคับ ${v.kind === 'moto' ? `รถจักรยานยนต์ ${ccLabel(v.model)}` : `รหัส ${v.code}`}</small></span>
           <em>+${money(cmi)}</em><span class="switch"></span>
         </button>`);
     }
@@ -846,7 +1001,7 @@
     return `
       <div class="section-head">
         <h2>แผนที่เลือก <span>${offers.length} แผน</span></h2>
-        <p>${icon(v.kind.startsWith('truck') ? 'truck' : 'car')} ${esc(v.name)} · ปี ${yearLabel(v.year)}</p>
+        <p>${icon(vehicleIcon(v))} ${esc(v.name)} · ปี ${yearLabel(v.year)}</p>
       </div>
       ${offers.map((o) => pickCard(o)).join('')}
       ${offers.length < MAX_PICKS ? `<button class="add-more" data-action="back">${icon('plus')}เลือกแผนเพิ่ม (ได้อีก ${MAX_PICKS - offers.length} แผน)</button>` : ''}
@@ -910,18 +1065,20 @@
     const q = state.quote;
     const date = new Date(q.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
     const prices = offers.map((o) => pricing(o, v));
-    const anyPlus = offers.some((o) => o.type === 'plus');
-    const anyDeduct = offers.some((o) => o.type !== 'tawikoon');
+    const anySum = offers.some(hasSum);
+    const anyDeduct = offers.some(hasDeduct);
     const labelWidth = { 1: 46, 2: 34, 3: 28, 4: 25 }[n];
     const tpbiFor = (o) => (o.type === 'plus' ? state.addons.tpbi : null);
+    const moto = v.kind === 'moto';
 
     const car = [
       ['ยี่ห้อ / รุ่น', esc(v.name)],
       ['ปีรถ', yearLabel(v.year)],
       ['ประเภทรถ', `${KINDS[v.kind].label} · รหัส ${v.code}`],
     ];
-    if (v.body) car.push(['ลักษณะรถ', BODY_LABEL[v.body]]);
-    else if (v.kind === 'car') car.push(['การใช้รถ', state.usage === 'commercial' ? 'เพื่อการพาณิชย์' : 'ส่วนบุคคล']);
+    if (moto) car.push(['ขนาดเครื่องยนต์', esc(ccLabel(v.model))], ['การใช้รถ', usageTh()], ['จังหวัดที่จดทะเบียน', REG_LABEL[v.body]]);
+    else if (v.body) car.push(['ลักษณะรถ', BODY_LABEL[v.body]]);
+    else if (v.kind === 'car') car.push(['การใช้รถ', usageTh()]);
 
     const row = (label, cells, cls = '') => `<tr class="${cls}"><th>${label}</th>${cells.join('')}</tr>`;
     const cell = (val) => `<td class="${val == null ? 'no' : ''}">${val == null ? 'ไม่คุ้มครอง' : val}</td>`;
@@ -930,10 +1087,10 @@
 
     const body = [];
     body.push(group('รายละเอียดแผน'));
-    if (anyPlus) body.push(row('ทุนประกันรถชนรถ', offers.map((o) => (o.type === 'plus' ? `<td>${money(o.sum)}</td>` : dash))));
+    if (anySum) body.push(row('ทุนประกันรถชนรถ', offers.map((o) => (hasSum(o) ? `<td>${money(o.sum)}</td>` : dash))));
     if (anyDeduct) {
       body.push(row(offers.some((o) => o.type === 'truck') ? 'ค่าเสียหายส่วนแรก<small>ต่อทรัพย์สินบุคคลภายนอก</small>' : 'ค่าเสียหายส่วนแรก (Deduct)',
-        offers.map((o) => (o.type === 'tawikoon' ? dash : `<td>${o.deductible ? money(o.deductible) : 'ไม่มี'}</td>`))));
+        offers.map((o) => (hasDeduct(o) ? `<td>${o.deductible ? money(o.deductible) : 'ไม่มี'}</td>` : dash))));
     }
     body.push(group('ความคุ้มครอง (บาท)'));
     rowsFor(offers).forEach((r) => {
@@ -963,7 +1120,7 @@
             </div>
             <div class="qp-title">
               <h1>ใบเสนอราคา</h1>
-              <p>ประกันภัยรถยนต์ภาคสมัครใจ</p>
+              <p>ประกันภัย${moto ? 'รถจักรยานยนต์' : 'รถยนต์'}ภาคสมัครใจ</p>
               <p class="qp-insurer">ผู้รับประกันภัย บริษัท มิตรแท้ประกันภัย จำกัด (มหาชน)</p>
             </div>
           </header>
@@ -973,8 +1130,8 @@
             <div><small>วันที่</small><b>${date}</b></div>
           </div>
           <section class="qp-sec">
-            <h4>รายละเอียดรถยนต์</h4>
-            <dl class="qp-car">${car.map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>
+            <h4>รายละเอียด${moto ? 'รถจักรยานยนต์' : 'รถยนต์'}</h4>
+            <dl class="qp-car ${moto ? 'is-moto' : ''}">${car.map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>
           </section>
           <section class="qp-sec">
             <h4>${n > 1 ? `เปรียบเทียบแผนประกันภัย ${n} แผน` : 'แผนประกันภัย'}</h4>
@@ -1032,11 +1189,13 @@
     stage.style.height = `${Math.ceil(PAGE_H * s)}px`;
   }
 
+  const shareTitle = () => `ใบเสนอราคาประกันภัย${vehicle().kind === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}`;
+
   function shareText() {
     const v = vehicle();
     const offers = pickedOffers(v);
     const lines = [
-      'ใบเสนอราคาประกันภัยรถยนต์ มิตรแท้ประกันภัย',
+      `${shareTitle()} มิตรแท้ประกันภัย`,
       `เลขที่ ${state.quote.no}`,
       `ลูกค้า: ${state.customer.name.trim()}`,
       `รถ: ${v.name} ปี ${yearLabel(v.year)}`,
@@ -1051,7 +1210,7 @@
     const extra = [];
     if (state.addons.ncd && offers.some((o) => o.type === 'plus')) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[state.addons.ncd]}`);
     if (state.addons.tpbi !== 500000 && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
-    if (state.addons.cmi) extra.push('รวม พ.ร.บ.');
+    if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
     if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
     lines.push('', `${AGENT.office} ${AGENT.name}`, `โทร ${AGENT.phone}`);
     return lines.join('\n');
@@ -1123,7 +1282,16 @@
   }
 
   function resetCar() {
-    Object.assign(state, { modelName: null, customModel: false, customModelName: '', customKind: null, year: null, body: null, usage: 'personal' });
+    Object.assign(state, { modelName: null, customModel: false, customModelName: '', customKind: null, customCc: null, year: null, body: null, usage: 'personal' });
+  }
+
+  function selectVtype(vtype) {
+    if (state.vtype === vtype || !VTYPES[vtype]) return;
+    state.vtype = vtype;
+    state.brandId = null;
+    state.customBrand = '';
+    resetCar();
+    render();
   }
 
   function selectBrand(id, customName) {
@@ -1151,7 +1319,8 @@
     state.customModel = true;
     state.modelName = null;
     state.customKind = null;
-    state.body = null;
+    state.customCc = null;
+    if (!isMotoTab()) state.body = null; // จังหวัดที่จดทะเบียนไม่ขึ้นกับรุ่น
     render();
     scrollToStep('step-model');
   }
@@ -1264,7 +1433,7 @@
       const file = new File([blob], `ใบเสนอราคา-${state.quote.no}.png`, { type: 'image/png' });
       const mobile = window.matchMedia('(pointer: coarse)').matches;
       if (mobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'ใบเสนอราคาประกันภัยรถยนต์' });
+        await navigator.share({ files: [file], title: shareTitle() });
       } else {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -1286,7 +1455,7 @@
     const text = shareText();
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'ใบเสนอราคาประกันภัยรถยนต์', text });
+        await navigator.share({ title: shareTitle(), text });
         return;
       }
       await navigator.clipboard.writeText(text);
@@ -1310,14 +1479,15 @@
 
     switch (el.dataset.action) {
       case 'back': goBack(); break;
+      case 'vtype': selectVtype(val); break;
       case 'brand': selectBrand(val); break;
       case 'brand-more': {
         const current = getBrand();
         openSheet({
           title: 'เลือกยี่ห้อรถ',
           search: true,
-          placeholder: 'ค้นหายี่ห้อ เช่น Toyota, BYD',
-          items: [...BRANDS].sort((a, b) => a.name.localeCompare(b.name)).map((b) => ({ value: b.id, label: b.name, sub: b.th, selected: current && current.id === b.id })),
+          placeholder: VTYPES[state.vtype].brandHint,
+          items: [...brandList()].sort((a, b) => a.name.localeCompare(b.name)).map((b) => ({ value: b.id, label: b.name, sub: b.th, selected: current && current.id === b.id })),
           extra: (q) => [{ value: '__other', label: q ? `ใช้ยี่ห้อ “${q}”` : 'ไม่พบยี่ห้อรถ', sub: 'ยี่ห้ออื่นที่ไม่มีในรายการ', muted: true }],
           onPick: (v, q) => (v === '__other' ? selectBrand('other', q) : selectBrand(v)),
         });
@@ -1331,7 +1501,7 @@
           title: `รุ่นรถ ${brand.name}`,
           search: brand.models.length > TOP_MODELS,
           placeholder: 'ค้นหารุ่นรถ',
-          items: brand.models.map((m) => ({ value: m.name, label: m.name, sub: KINDS[m.kind].short, selected: model === m })),
+          items: brand.models.map((m) => ({ value: m.name, label: m.name, sub: m.kind === 'moto' ? ccLabel(m) : KINDS[m.kind].short, selected: model === m })),
           extra: () => [{ value: '__custom', label: 'ไม่พบรุ่นรถ', sub: 'ระบุรุ่นและประเภทรถเอง', muted: true }],
           onPick: (v) => (v === '__custom' ? pickCustomModel() : selectModel(v)),
         });
@@ -1343,6 +1513,12 @@
         render();
         scrollToStep(nextStepId());
         break;
+      case 'cc':
+        state.customKind = 'moto';
+        state.customCc = Number(val);
+        render();
+        scrollToStep(nextStepId());
+        break;
       case 'year':
         state.year = Number(val);
         render();
@@ -1351,7 +1527,7 @@
       case 'year-more': {
         const model = getModel();
         openSheet({
-          title: 'เลือกปีรถยนต์',
+          title: `เลือกปี${VTYPES[state.vtype].noun}`,
           items: yearsFor(model).map((y) => ({ value: String(y), label: yearLabel(y), selected: state.year === y })),
           onPick: (v) => { state.year = Number(v); render(); scrollToStep(nextStepId()); },
         });
@@ -1390,7 +1566,7 @@
       case 'print': window.print(); break;
       case 'share': share(); break;
       case 'restart': {
-        state = { ...initialState(), deduct: state.deduct, custType: state.custType };
+        state = { ...initialState(), deduct: state.deduct, custType: state.custType, vtype: state.vtype };
         history.replaceState({ view: 'search', depth: 0 }, '', '#search');
         render();
         window.scrollTo(0, 0);
