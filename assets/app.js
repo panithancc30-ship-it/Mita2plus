@@ -183,6 +183,7 @@
       cls: student ? 2 : Number(state.paOcc),
       occLabel,
       occNote: listed && listed[2] ? listed[2] : '',
+      occNoteFor: listed && listed[3] ? listed[3] : null, // null = ใช้กับทุกแผน
       name: `อายุ ${age.label} · ${occLabel}`,
       body: null,
     };
@@ -672,10 +673,13 @@
     return list;
   }
 
+  // หมายเหตุอาชีพ (เช่น ทนายความ / อาชีพจากใบเก่า) แสดงเมื่อเกี่ยวกับแผนที่มีอยู่
+  const occNoteApplies = (v, offers) => !!v.occNote && (!v.occNoteFor || offers.some((o) => v.occNoteFor.includes(o.pid)));
+
   function paConditions(v, offers) {
     const C = PA.conditions;
     const list = Object.keys(PA.products).filter((pid) => offers.some((o) => o.pid === pid)).map((pid) => C[pid]);
-    if (v.occNote && offers.some((o) => o.pid === 'bone')) list.push(v.occNote);
+    if (occNoteApplies(v, offers)) list.push(v.occNote);
     return [...list, ...C.common, 'คำนวณจากตารางเบี้ยตามโบรชัวร์ของบริษัทฯ บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัยและเปลี่ยนแปลงอัตราเบี้ยโดยไม่ต้องแจ้งให้ทราบล่วงหน้า'];
   }
 
@@ -1002,7 +1006,7 @@
       const why = paBlockReason(p, v);
       if (why) notices.push(why);
     });
-    if (v.occNote) notices.push(v.occNote);
+    if (occNoteApplies(v, offers)) notices.push(v.occNote);
     const tabs = [['all', 'ทั้งหมด', offers.length]];
     Object.values(PA.products).forEach((p) => { if (counts[p.key]) tabs.push([p.key, p.badge, counts[p.key]]); });
 
@@ -1755,10 +1759,10 @@
           title: 'ค้นหาอาชีพ',
           search: true,
           placeholder: 'พิมพ์ชื่ออาชีพ เช่น ครู, ช่างไฟ',
-          items: PA.occList.map(([name, id]) => ({
+          items: PA.occList.map(([name, id, note]) => ({
             value: name,
             label: name,
-            sub: id === 'student' ? 'นักเรียน / นักศึกษา' : `ชั้น ${id}`,
+            sub: (id === 'student' ? 'นักเรียน / นักศึกษา' : `ชั้น ${id}`) + (note === PA.legacyNote ? ' · ใบเก่า' : ''),
             selected: state.paOccName === name,
           })),
           onPick: (name) => {
