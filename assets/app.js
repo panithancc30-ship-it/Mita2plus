@@ -301,9 +301,9 @@
 
   // ประกันอุบัติเหตุ: เหตุผลที่สินค้านี้ซื้อไม่ได้ (null = ซื้อได้)
   function paBlockReason(p, v) {
-    if (v.student && p.noStudent) return `${p.badge} ไม่รับนักเรียน / นิสิต / นักศึกษา`;
-    if (!(v.ageId in p.bands)) return `${p.badge} รับอายุ ${p.ageText} เท่านั้น`;
-    if (!p.classes.includes(v.cls)) return `${p.badge} รับอาชีพชั้น ${p.classText} เท่านั้น`;
+    if (v.student && p.noStudent) return `${p.name} ไม่รับนักเรียน / นิสิต / นักศึกษา`;
+    if (!(v.ageId in p.bands)) return `${p.name} รับอายุ ${p.ageText} เท่านั้น`;
+    if (!p.classes.includes(v.cls)) return `${p.name} รับอาชีพชั้น ${p.classText} เท่านั้น`;
     return null;
   }
 
@@ -798,7 +798,7 @@
       <section class="hero">
         <p class="hero-kicker">${icon('shield')} มิตรแท้ประกันภัย</p>
         <h1>เช็คเบี้ยประกันอุบัติเหตุ<span class="nw">ส่วนบุคคล</span><br><span>เลือกอายุ + อาชีพ รู้ราคาทันที</span></h1>
-        <div class="hero-classes"><span>PLV</span><span>PA 700</span><span>กระดูกแตกหัก</span></div>
+        <div class="hero-classes"><span>PLV</span><span>PA 700</span><span>PMA กระดูกแตกหัก</span></div>
       </section>
       <section class="card finder">
         ${vtypeTabs()}
@@ -828,7 +828,7 @@
         <button class="btn btn-primary btn-block see-plans" id="seePlans" data-action="see-plans" ${complete ? '' : 'disabled'}>ดูแผนประกันเลย</button>
       </section>
       ${agentCard()}
-      <p class="page-note">เบี้ยประกันตามโบรชัวร์มิตรแท้ประกันภัย ต่อคนต่อปี (PLV และ PA 700 รวมภาษีมูลค่าเพิ่มและอากรแสตมป์ · กระดูกแตกหักรวมอากรแสตมป์)</p>`;
+      <p class="page-note">เบี้ยประกันตามโบรชัวร์มิตรแท้ประกันภัย ต่อคนต่อปี (PLV และ PA 700 รวมภาษีมูลค่าเพิ่มและอากรแสตมป์ · PMA กระดูกแตกหักรวมอากรแสตมป์)</p>`;
   }
 
   function renderSearch() {
