@@ -161,7 +161,7 @@
   const needsBody = (kind) => kind === 'pickup' || kind === 'truck6' || kind === 'truck10' || kind === 'moto';
 
   function isComplete() {
-    if (isPaTab()) return !!(state.paAge && state.paOcc);
+    if (isPaTab()) return PA.ages.some((a) => a.id === state.paAge) && PA.occs.some((o) => o.id === state.paOcc);
     const m = getModel();
     return !!(getBrand() && m && m.kind && state.year && (!needsBody(m.kind) || state.body));
   }
@@ -494,7 +494,7 @@
     { id: 'murder', label: 'ถูกฆาตกรรม / ถูกทำร้ายร่างกาย' },
     { id: 'moto', label: 'เสียชีวิตจากการขับขี่ / โดยสารรถจักรยานยนต์' },
     { id: 'public', label: 'อุบัติเหตุสาธารณะ / วันหยุดนักขัตฤกษ์', sub: 'รับเพิ่มจากเสียชีวิตทั่วไป' },
-    { id: 'med', label: 'ค่ารักษาพยาบาล', sub: 'ต่ออุบัติเหตุแต่ละครั้ง จ่ายตามจริงไม่เกิน' },
+    { id: 'med', label: 'ค่ารักษาพยาบาล', sub: 'ต่ออุบัติเหตุแต่ละครั้ง' },
     { id: 'bone', label: 'กระดูกแตกหัก', sub: 'เหมาจ่าย ต่อครั้งต่อปี' },
     { id: 'income', label: 'ชดเชยรายได้นอนโรงพยาบาล', sub: 'ผู้ป่วยในจากอุบัติเหตุ' },
     { id: 'funeral', label: 'ค่าปลงศพ / จัดการงานศพ' },
@@ -510,6 +510,7 @@
     switch (id) {
       case 'death': return money(val) + note(c.deathNote);
       case 'moto': return money(val) + note(c.motoNote);
+      case 'med': return money(val) + note(c.medNote);
       case 'public': return `เพิ่มอีก ${money(val)}`;
       case 'bone': return `${money(val)} /ครั้ง`;
       case 'income': return `ห้องปกติ ${money(val.room)} /วัน<br>ห้อง ICU ${money(val.icu)} /วัน<br><small>ไม่เกิน 14 วัน/ครั้ง<br>รวมไม่เกิน 365 วัน</small>`;
@@ -671,14 +672,15 @@
     return list;
   }
 
-  function paConditions(offers) {
+  function paConditions(v, offers) {
     const C = PA.conditions;
     const list = Object.keys(PA.products).filter((pid) => offers.some((o) => o.pid === pid)).map((pid) => C[pid]);
+    if (v.occNote && offers.some((o) => o.pid === 'bone')) list.push(v.occNote);
     return [...list, ...C.common, 'คำนวณจากตารางเบี้ยตามโบรชัวร์ของบริษัทฯ บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัยและเปลี่ยนแปลงอัตราเบี้ยโดยไม่ต้องแจ้งให้ทราบล่วงหน้า'];
   }
 
   function quoteConditions(v, offers) {
-    if (v.kind === 'pa') return paConditions(offers);
+    if (v.kind === 'pa') return paConditions(v, offers);
     if (v.kind === 'moto') return motoConditions(v, offers);
     const plusOffers = offers.filter((o) => o.type === 'plus');
     const truck = offers.some((o) => o.type === 'truck');
@@ -757,6 +759,8 @@
       history.replaceState({ view, depth: depth() }, '', `#${view}`);
     }
     if (view !== 'search') {
+      // ประกันอุบัติเหตุ: รหัสแผนซ้ำกันข้ามอายุ/ชั้นอาชีพ จึงล้างแผนที่เลือกไว้เมื่อผู้เอาประกันเปลี่ยน (เช่น กดย้อนกลับ แก้ แล้วกดไปข้างหน้า)
+      if (isPaTab() && state.picksSig !== carSig()) state.picks = [];
       const v = vehicle();
       state.picks = state.picks.filter((p) => resolvePick(v, p));
     }
@@ -789,7 +793,7 @@
     return `
       <section class="hero">
         <p class="hero-kicker">${icon('shield')} มิตรแท้ประกันภัย</p>
-        <h1>เช็คเบี้ยประกัน${vt.noun}<br><span>เลือกอายุ + อาชีพ รู้ราคาทันที</span></h1>
+        <h1>เช็คเบี้ยประกันอุบัติเหตุ<span class="nw">ส่วนบุคคล</span><br><span>เลือกอายุ + อาชีพ รู้ราคาทันที</span></h1>
         <div class="hero-classes"><span>PLV</span><span>PA 700</span><span>กระดูกแตกหัก</span></div>
       </section>
       <section class="card finder">
@@ -797,7 +801,7 @@
         <div class="progress" aria-hidden="true"><i style="width:${Math.round((done / 2) * 100)}%"></i></div>
         <h2 class="finder-title">ค้นหาแผนประกัน${vt.noun}</h2>
         <div class="step" id="step-age">
-          ${stepHead(1, 'ช่วงอายุผู้เอาประกัน', !!state.paAge)}
+          ${stepHead(1, 'ช่วงอายุผู้เอาประกันภัย', !!state.paAge)}
           <div class="chip-grid span-last">
             ${PA.ages.map((a) => `<button class="chip ${state.paAge === a.id ? 'is-on' : ''}" data-action="pa-age" data-value="${a.id}" aria-pressed="${state.paAge === a.id}">${a.label}</button>`).join('')}
           </div>
@@ -958,7 +962,6 @@
   }
 
   function carSummary(v) {
-    if (v.kind === 'pa') return paSummary(v);
     const meta = [`ปี ${yearLabel(v.year)}`, KINDS[v.kind].short, `รหัส ${v.code}`];
     if (v.kind === 'moto') meta.push(ccLabel(v.model));
     if (v.body) meta.push(BODY_LABEL[v.body]);
@@ -1006,12 +1009,12 @@
     return `
       ${paSummary(v)}
       ${offers.length ? `
-        ${tabs.length > 2 ? `<div class="tabs" role="tablist">
+        ${notices.map((n) => `<div class="notice">${icon('info')}<p>${esc(n)}</p></div>`).join('')}
+        ${tabs.length > 2 ? `<div class="tabs ${tabs.length > 3 ? 'compact' : ''}" role="tablist">
           ${tabs.map(([id, label, n]) => `<button role="tab" class="tab ${state.filter === id ? 'is-on' : ''}" data-action="filter" data-value="${id}" aria-selected="${state.filter === id}">${label}<span>${n}</span></button>`).join('')}
         </div>` : ''}
         <p class="result-count">พบ ${shown.length} แผน · เรียงจากเบี้ยต่ำสุด · เลือกได้สูงสุด ${MAX_PICKS} แผน</p>
         <div class="offer-list">${shown.map((o) => offerCard(o, v)).join('')}</div>
-        ${notices.map((n) => `<div class="notice">${icon('info')}<p>${esc(n)}</p></div>`).join('')}
         ${agentCard()}
         <p class="page-note">เบี้ยประกันต่อคนต่อปีตามโบรชัวร์ · บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัย</p>
         ${pickTray(v)}`
@@ -1310,7 +1313,7 @@
         ['ปีรถ', yearLabel(v.year)],
         ['ประเภทรถ', `${KINDS[v.kind].label} · รหัส ${v.code}`],
       ];
-    if (pa) { /* ไม่มีรายละเอียดรถ */ } else if (moto) car.push(['ขนาดเครื่องยนต์', esc(ccLabel(v.model))], ['การใช้รถ', usageTh()], ['จังหวัดที่จดทะเบียน', REG_LABEL[v.body]]);
+    if (moto) car.push(['ขนาดเครื่องยนต์', esc(ccLabel(v.model))], ['การใช้รถ', usageTh()], ['จังหวัดที่จดทะเบียน', REG_LABEL[v.body]]);
     else if (v.body) car.push(['ลักษณะรถ', BODY_LABEL[v.body]]);
     else if (v.kind === 'car') car.push(['การใช้รถ', usageTh()]);
 
@@ -1437,7 +1440,7 @@
       `${shareTitle()} มิตรแท้ประกันภัย`,
       `เลขที่ ${state.quote.no}`,
       `ลูกค้า: ${state.customer.name.trim()}`,
-      v.kind === 'pa' ? `ผู้เอาประกัน: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`,
+      v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`,
       '',
     ];
     offers.forEach((o, i) => {
@@ -1478,8 +1481,10 @@
   }
 
   function drawSheetList() {
-    const q = sheet.query.trim().toLowerCase();
-    const items = sheet.items.filter((it) => !q || `${it.label} ${it.sub || ''}`.toLowerCase().includes(q));
+    // ไม่สนช่องว่าง/เครื่องหมาย / ในคำค้น เช่น "ครู อาจารย์" หาเจอ "ครู / อาจารย์"
+    const norm = (t) => t.toLowerCase().replace(/[\s/]+/g, '');
+    const q = norm(sheet.query);
+    const items = sheet.items.filter((it) => !q || norm(`${it.label} ${it.sub || ''}`).includes(q));
     const extra = sheet.extra ? sheet.extra(sheet.query.trim()) : null;
     const all = extra ? items.concat(extra) : items;
     $('#sheetList').innerHTML = all.length
