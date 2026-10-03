@@ -148,6 +148,7 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .hero-kicker { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; opacity: 0.92; }
 .hero-kicker .ic { width: 18px; height: 18px; color: var(--yellow); }
 .hero h1 { font-size: 27px; line-height: 1.3; font-weight: 700; margin-top: 6px; }
+.hero h1 .nw { display: inline; font-size: inherit; font-weight: inherit; color: inherit; margin: 0; white-space: nowrap; }
 .hero h1 span { display: block; font-size: 17px; font-weight: 500; color: #eaf7ee; margin-top: 2px; }
 .hero-classes { display: flex; gap: 8px; margin-top: 14px; }
 .hero-classes span {
@@ -161,7 +162,7 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 
 .finder { margin-top: -48px; position: relative; padding: 18px 16px 20px; }
 .seg.vtype { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; margin-bottom: 16px; }
-.seg.vtype button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 6px; font-size: 16px; }
+.seg.vtype button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 4px; font-size: 14.5px; }
 .seg.vtype .ic { width: 24px; height: 24px; }
 .seg.vtype button.is-on .ic { color: var(--green-700); }
 .progress { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-bottom: 14px; }
@@ -228,6 +229,7 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .chip-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .chip-grid.three { grid-template-columns: repeat(3, 1fr); }
 .chip-grid.one-col { grid-template-columns: 1fr; }
+.chip-grid.span-last > .chip:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .chip {
   min-height: 46px;
   padding: 6px 10px;
@@ -337,6 +339,9 @@ body:not([data-view="search"]) main { padding-top: 16px; }
   white-space: nowrap;
 }
 .tab span { font-size: 12px; min-width: 18px; padding: 0 5px; border-radius: 99px; background: var(--green-50); color: var(--green-700); }
+.tabs.compact { gap: 4px; }
+.tabs.compact .tab { padding: 0 4px; font-size: 14px; gap: 3px; }
+.tabs.compact .tab span { min-width: 16px; padding: 0 4px; }
 .tab.is-on { background: var(--green-700); border-color: var(--green-700); color: #fff; }
 .tab.is-on span { background: rgba(255, 255, 255, 0.2); color: #fff; }
 
@@ -437,6 +442,7 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .empty > .ic { width: 36px; height: 36px; color: var(--amber); }
 .empty h3 { font-size: 17px; margin: 8px 0 4px; }
 .empty p { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+.empty a { white-space: nowrap; }
 
 /* ---------- checkout ---------- */
 .plan-summary .price b { font-size: 24px; }
@@ -511,6 +517,29 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .btn-outline:hover { background: var(--green-50); }
 .pick-btn .ic { width: 20px; height: 20px; stroke-width: 2.4; }
 .offer.is-picked { box-shadow: 0 0 0 2px var(--green-600), var(--shadow); }
+
+/* ประกันอุบัติเหตุ: แถวสั้น แตะทั้งแถวเพื่อเลือก */
+.offer-list.rows { gap: 8px; }
+.prow { background: #fff; border-radius: 14px; box-shadow: var(--shadow); }
+.prow.is-picked { box-shadow: 0 0 0 2px var(--green-600), var(--shadow); }
+.prow-line { display: flex; align-items: stretch; }
+.prow-pick { flex: 1; min-width: 0; min-height: 60px; display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 12px; border: 0; border-radius: 14px 0 0 14px; background: transparent; color: inherit; font: inherit; text-align: left; }
+.pcheck { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #b8c4bc; display: grid; place-items: center; color: transparent; }
+.pcheck .ic { width: 14px; height: 14px; stroke-width: 3; }
+.prow.is-picked .pcheck { background: var(--green-700); border-color: var(--green-700); color: #fff; }
+.prow-text { flex: 1; min-width: 0; }
+.prow-text b { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; line-height: 1.3; }
+.prow-text b .cls { font-size: 11.5px; padding: 1px 7px; border-radius: 6px; }
+.prow-text small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.prow-text small span { white-space: nowrap; } /* ตัดบรรทัดระหว่างรายการ ไม่ตัดกลางคำ */
+.prow-price { flex: none; text-align: right; }
+.prow-price b { display: block; font-size: 19px; line-height: 1.15; font-weight: 700; color: var(--green-800); font-variant-numeric: tabular-nums; }
+.prow-price small { font-size: 11.5px; color: var(--muted); }
+.prow-more { flex: none; width: 42px; border: 0; border-left: 1px solid #edf1ee; border-radius: 0 14px 14px 0; background: transparent; color: var(--green-700); display: grid; place-items: center; }
+.prow-more .ic { width: 18px; height: 18px; transition: transform 0.2s; }
+.prow-more.is-open .ic { transform: rotate(180deg); }
+.prow-detail { padding: 0 14px 12px; border-top: 1px solid var(--line); }
+.prow-detail .notes { margin: 10px 0 2px; }
 
 body[data-view="plans"] main { padding-bottom: calc(150px + var(--safe-bottom)); }
 .tray .bottom-inner.col { flex-direction: column; align-items: stretch; gap: 8px; }
@@ -632,6 +661,8 @@ body[data-view="plans"] main { padding-bottom: calc(150px + var(--safe-bottom));
 .qp-meta b { font-size: 1.15em; }
 .qp-meta span { margin-left: 10px; color: var(--ink-2); }
 .qp-meta > div:nth-child(2), .qp-meta > div:nth-child(3) { text-align: right; }
+.qp-meta > div:first-child { min-width: 0; }
+.qp-meta > div:first-child b { display: block; overflow: hidden; text-overflow: ellipsis; }
 
 .qp-sec { padding: 0.9em 36px 0; }
 .qp-sec h4 { font-size: 0.85em; font-weight: 600; color: var(--green-700); margin-bottom: 0.4em; }
@@ -639,6 +670,7 @@ body[data-view="plans"] main { padding-bottom: calc(150px + var(--safe-bottom));
 .qp-car dt { font-size: 0.8em; color: var(--muted); }
 .qp-car dd { margin: 0; font-weight: 600; }
 .qp-car.is-moto { grid-template-columns: 1.3fr 1fr 1.5fr; gap: 0.35em 18px; }
+.qp-car.is-pa { grid-template-columns: 1fr 1fr 2fr; }
 
 .qp-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-variant-numeric: tabular-nums; }
 .qp-table th, .qp-table td { padding: 0.36em 8px; border-bottom: 1px solid #e6ece8; vertical-align: middle; }
