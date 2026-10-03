@@ -518,6 +518,29 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .pick-btn .ic { width: 20px; height: 20px; stroke-width: 2.4; }
 .offer.is-picked { box-shadow: 0 0 0 2px var(--green-600), var(--shadow); }
 
+/* ประกันอุบัติเหตุ: แถวสั้น แตะทั้งแถวเพื่อเลือก */
+.offer-list.rows { gap: 8px; }
+.prow { background: #fff; border-radius: 14px; box-shadow: var(--shadow); }
+.prow.is-picked { box-shadow: 0 0 0 2px var(--green-600), var(--shadow); }
+.prow-line { display: flex; align-items: stretch; }
+.prow-pick { flex: 1; min-width: 0; min-height: 60px; display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 12px; border: 0; border-radius: 14px 0 0 14px; background: transparent; color: inherit; font: inherit; text-align: left; }
+.pcheck { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #b8c4bc; display: grid; place-items: center; color: transparent; }
+.pcheck .ic { width: 14px; height: 14px; stroke-width: 3; }
+.prow.is-picked .pcheck { background: var(--green-700); border-color: var(--green-700); color: #fff; }
+.prow-text { flex: 1; min-width: 0; }
+.prow-text b { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; line-height: 1.3; }
+.prow-text b .cls { font-size: 11.5px; padding: 1px 7px; border-radius: 6px; }
+.prow-text small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.prow-text small span { white-space: nowrap; } /* ตัดบรรทัดระหว่างรายการ ไม่ตัดกลางคำ */
+.prow-price { flex: none; text-align: right; }
+.prow-price b { display: block; font-size: 19px; line-height: 1.15; font-weight: 700; color: var(--green-800); font-variant-numeric: tabular-nums; }
+.prow-price small { font-size: 11.5px; color: var(--muted); }
+.prow-more { flex: none; width: 42px; border: 0; border-left: 1px solid #edf1ee; border-radius: 0 14px 14px 0; background: transparent; color: var(--green-700); display: grid; place-items: center; }
+.prow-more .ic { width: 18px; height: 18px; transition: transform 0.2s; }
+.prow-more.is-open .ic { transform: rotate(180deg); }
+.prow-detail { padding: 0 14px 12px; border-top: 1px solid var(--line); }
+.prow-detail .notes { margin: 10px 0 2px; }
+
 body[data-view="plans"] main { padding-bottom: calc(150px + var(--safe-bottom)); }
 .tray .bottom-inner.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .tray-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }

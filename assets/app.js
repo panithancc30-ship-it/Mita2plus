@@ -1018,7 +1018,7 @@
           ${tabs.map(([id, label, n]) => `<button role="tab" class="tab ${state.filter === id ? 'is-on' : ''}" data-action="filter" data-value="${id}" aria-selected="${state.filter === id}">${label}<span>${n}</span></button>`).join('')}
         </div>` : ''}
         <p class="result-count">พบ ${shown.length} แผน · เรียงจากเบี้ยต่ำสุด · เลือกได้สูงสุด ${MAX_PICKS} แผน</p>
-        <div class="offer-list">${shown.map((o) => offerCard(o, v)).join('')}</div>
+        <div class="offer-list rows">${shown.map((o) => paRow(o, v)).join('')}</div>
         ${agentCard()}
         <p class="page-note">เบี้ยประกันต่อคนต่อปีตามโบรชัวร์ · บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัย</p>
         ${pickTray(v)}`
@@ -1123,6 +1123,42 @@
         <button class="btn ${picked ? 'btn-primary' : 'btn-outline'} btn-block pick-btn" data-action="pick" data-value="${o.key}" aria-pressed="${picked}">
           ${icon(picked ? 'check' : 'plus')}${picked ? 'เลือกแล้ว' : 'เลือกแผนนี้'}
         </button>
+      </article>`;
+  }
+
+  // ประกันอุบัติเหตุ: แผนเยอะ (PLV 20 แผน) จึงใช้แถวสั้น — แตะทั้งแถวเพื่อเลือก, ลูกศรขวาเปิดความคุ้มครองเต็ม
+  function paRow(o, v) {
+    const c = o.cov;
+    const picked = isPicked(o);
+    const open = openCov.has(o.key);
+    const facts = [`เสียชีวิต ${money(c.death)}`, c.bone ? `กระดูกแตก ${money(c.bone)}` : `มอไซค์ ${money(c.moto)}`];
+    facts.push(c.med ? `รักษา ${money(c.med)}` : 'ไม่มีค่ารักษา');
+    if (c.income) facts.push(`นอน รพ. ${money(c.income.room)}/วัน`);
+    else if (c.funeral) facts.push(`ปลงศพ ${money(c.funeral)}`);
+    const notes = offerNotes(o, v);
+    return `
+      <article class="prow ${picked ? 'is-picked' : ''}">
+        <div class="prow-line">
+          <button class="prow-pick" data-action="pick" data-value="${o.key}" aria-pressed="${picked}">
+            <span class="pcheck">${icon('check')}</span>
+            <span class="prow-text">
+              <b>${clsBadge(o)}<span>${esc(o.planShort || 'แผนเดียว')}</span></b>
+              <small>${facts.map((f) => `<span>${f}</span>`).join(' · ')}</small>
+            </span>
+            <span class="prow-price"><b>${money(o.price)}</b><small>บาท/ปี</small></span>
+          </button>
+          <button class="prow-more ${open ? 'is-open' : ''}" data-action="cov-toggle" data-value="${o.key}" aria-expanded="${open}" aria-label="ความคุ้มครอง ${esc(shortName(o))}">${icon('chev')}</button>
+        </div>
+        ${open ? `
+          <div class="prow-detail">
+            ${notes.length ? `<div class="notes">${notes.map((n) => `<span class="note ${n.warn ? 'warn' : ''}">${icon(n.icon)}${esc(n.text)}</span>`).join('')}</div>` : ''}
+            <table class="cov-table"><tbody>
+              ${rowsFor([o]).map((r) => {
+                const val = coverageValue(r.id, o, v);
+                return `<tr><th>${rowLabel(r, [o])}</th><td class="${val ? '' : 'no'}">${val || 'ไม่คุ้มครอง'}</td></tr>`;
+              }).join('')}
+            </tbody></table>
+          </div>` : ''}
       </article>`;
   }
 
@@ -1838,6 +1874,10 @@
       case 'filter': state.filter = val; render(); break;
       case 'deduct': state.deduct = val === '1'; render(); break;
       case 'pick': togglePick(val); break;
+      case 'cov-toggle':
+        if (openCov.has(val)) openCov.delete(val); else openCov.add(val);
+        render();
+        break;
       case 'unpick': state.picks.splice(Number(val), 1); render(); break;
       case 'to-checkout': go('checkout'); break;
       case 'ncd': state.addons.ncd = Number(val); render(); break;
