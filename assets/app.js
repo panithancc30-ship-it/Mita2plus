@@ -14,12 +14,10 @@
     models: b.models.map(([name, cc, from, to]) => ({ name, kind: 'moto', cc, from, to })),
   }));
   const THIS_YEAR = new Date().getFullYear();
-  const OLDEST_YEAR = THIS_YEAR - 30; // ปุ่มปีลัดแสดงเฉพาะช่วงนี้
   const MIN_YEAR = 1957; // พ.ศ. 2500 — ปีเก่าสุดที่พิมพ์/เลือกเองได้
   const MAX_YEAR = THIS_YEAR + 1; // รถรุ่นปีถัดไปที่ออกขายก่อนสิ้นปี
   const STORE_KEY = 'mt-quote-state-v2';
   const TOP_MODELS = 8;
-  const TOP_YEARS = 6;
   const MAX_PICKS = 4; // จำนวนแผนสูงสุดต่อใบเสนอราคา (ให้ตารางเปรียบเทียบยังอยู่ใน A4 หน้าเดียว)
   const PAGE_W = 794; // A4 ที่ 96dpi
   const PAGE_H = 1122;
@@ -166,14 +164,6 @@
   const ccLabel = (m) => (m.custom ? (CC_CHOICES.find(([cc]) => cc === m.cc) || [])[1] : `${m.cc} cc`);
   const vehicleIcon = (v) => (v.kind === 'pa' ? 'person' : v.kind === 'moto' ? 'moto' : v.kind.startsWith('truck') ? 'truck' : 'car');
   const usageTh = () => (state.usage === 'commercial' ? 'เพื่อการพาณิชย์' : 'ส่วนบุคคล');
-
-  function yearsFor(model) {
-    const from = Math.max(model && model.from ? model.from : OLDEST_YEAR, OLDEST_YEAR);
-    const to = Math.min(model && model.to ? model.to : THIS_YEAR, THIS_YEAR);
-    const ys = [];
-    for (let y = to; y >= from; y--) ys.push(y);
-    return ys;
-  }
 
   const needsBody = (kind) => kind === 'pickup' || kind === 'truck6' || kind === 'truck10' || kind === 'moto';
 
@@ -883,7 +873,7 @@
         <h2 class="finder-title">ค้นหาแผนประกัน${vt.noun}</h2>
         ${stepBrand(brand)}
         ${brand ? stepModel(brand, model) : ''}
-        ${modelOk ? stepYear(model) : ''}
+        ${modelOk ? stepYear() : ''}
         ${bodyNeeded && state.year ? stepBody(model.kind) : ''}
         <button class="btn btn-primary btn-block see-plans" id="seePlans" data-action="see-plans" ${complete ? '' : 'disabled'}>ดูแผนประกันเลย</button>
       </section>
@@ -952,22 +942,22 @@
       </div>`;
   }
 
-  function stepYear(model) {
-    const top = yearsFor(model).slice(0, TOP_YEARS);
-    if (state.year && !top.includes(state.year)) top.push(state.year);
-    top.sort((x, y) => y - x);
+  // ปีรถ: พิมพ์เองช่องเดียว (พ.ศ. หรือ ค.ศ.) ครบ 4 หลักระบบเลือกให้ทันที
+  const yearHint = (editing) => (state.year && !editing ? `ค.ศ. ${state.year} · อายุรถ ${Math.max(0, THIS_YEAR - state.year)} ปี` : 'พิมพ์ได้ทั้ง พ.ศ. หรือ ค.ศ.');
+  const YEAR_RANGE_MSG = `ไม่พบปีนี้ กรุณาพิมพ์ปี พ.ศ. ${MIN_YEAR + 543} – ${MAX_YEAR + 543} (หรือ ค.ศ. ${MIN_YEAR} – ${MAX_YEAR})`;
+  const YEAR_SHORT_MSG = 'กรุณาพิมพ์ปีให้ครบ 4 หลัก เช่น 2555';
+
+  function stepYear() {
+    const y = state.year;
+    const noun = VTYPES[state.vtype].noun;
     return `
       <div class="step" id="step-year">
-        ${stepHead(3, `เลือกปี${VTYPES[state.vtype].noun} (พ.ศ.)`, !!state.year)}
-        ${top.length ? `<div class="chip-grid span-last">
-          ${top.map((y) => `<button class="chip ${state.year === y ? 'is-on' : ''}" data-action="year" data-value="${y}" aria-pressed="${state.year === y}">${yearLabel(y)}</button>`).join('')}
-        </div>` : ''}
-        <button class="select-btn" data-action="year-more"><span>ดูทุกปี (${MAX_YEAR + 543} – ${MIN_YEAR + 543})</span>${icon('chev')}</button>
-        <label class="field year-field">
-          <span>หรือพิมพ์ปีเอง <small>(พ.ศ. หรือ ค.ศ.)</small></span>
-          <input id="yearInput" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" placeholder="เช่น ${THIS_YEAR + 543 - 10}" aria-describedby="yearError">
-          <em class="field-error year-error" id="yearError" aria-live="polite"></em>
-        </label>
+        ${stepHead(3, `ระบุปี${noun} (พ.ศ.)`, !!y)}
+        <div class="year-field">
+          <input id="yearInput" class="${y ? 'is-set' : ''}" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off"
+            value="${y ? y + 543 : ''}" placeholder="เช่น ${THIS_YEAR + 543 - 10}" aria-label="ปี${noun} (พ.ศ.)" aria-describedby="yearNote">
+          <small class="year-note" id="yearNote" aria-live="polite">${yearHint()}</small>
+        </div>
       </div>`;
   }
 
@@ -1613,6 +1603,41 @@
     });
   }
 
+  function startSummary() {
+    state.sumQuote = newQuoteMeta();
+    go('summary');
+  }
+
+  // ก่อนเปิดใบรวม: เลือกทุนประกัน (และ Deduct) ที่ใช้กับทุกแผนในใบ — ไม่มีอะไรให้เลือก (เช่น ประกันอุบัติเหตุ) ไปใบรวมเลย
+  function openSummarySheet() {
+    const offers = buildOffers(vehicle());
+    const select = (field, label, sub, options, current) => `
+      <label class="mini-select">
+        <span>${label}${sub ? ` <small>${sub}</small>` : ''}</span>
+        <select data-sum-field="${field}">${options.map(([v, t]) => `<option value="${v}" ${String(v) === String(current) ? 'selected' : ''}>${t}</option>`).join('')}</select>${icon('chev')}
+      </label>`;
+    const fields = [];
+    ['plus2', 'plus3', 'moto'].forEach((fam) => {
+      const own = offers.filter((o) => hasSum(o) && o.family === fam);
+      if (!own.length) return;
+      const cls = [...new Set(own.map((o) => o.cls))].sort((a, b) => CLS_ORDER[a] - CLS_ORDER[b]).join(' / ');
+      fields.push(select(fam, `ทุนรถชนรถ ชั้น ${cls}`, fam === 'moto' ? '60% ของราคาตลาด' : '', own[0].sums.map((x) => [x, `${money(x)} บาท`]), own[0].sum));
+    });
+    const d = offers.find((o) => o.type === 'truck' || o.deductChoice);
+    if (d) {
+      fields.push(select('deduct', 'ค่าเสียหายส่วนแรก (Deduct)', d.type === 'truck' ? 'ต่อทรัพย์สินบุคคลภายนอก' : offers.some((o) => o.type !== 'plus') ? 'ใช้กับชั้น 2+ และ 3+' : '',
+        [[1, `มี ${money(d.deductAmount)} บาท (เบี้ยถูกกว่า)`], [0, 'ไม่มี']], state.deduct ? 1 : 0));
+    }
+    if (!fields.length) { startSummary(); return; }
+    openSheet({
+      title: 'เลือกทุนประกัน',
+      body: `
+        <p class="sheet-note">ใช้กับทุกแผนในใบเสนอราคารวม (${offers.length} แผน)</p>
+        <div class="sheet-fields">${fields.join('')}</div>
+        <button class="btn btn-primary btn-block" data-action="summary-go">${icon('table')}ดูใบเสนอราคารวม</button>`,
+    });
+  }
+
   function renderSummary() {
     const v = vehicle();
     if (!state.sumQuote) state.sumQuote = newQuoteMeta();
@@ -1672,6 +1697,7 @@
   const sheetEl = $('#sheet');
   let sheet = null;
   let skipPop = false;
+  let afterPop = null; // งานหลังปิด sheet — ต้องรอ history.back() เสร็จก่อน ไม่งั้น pushState ถัดไปจะถูกย้อนทิ้ง
 
   function openSheet(cfg) {
     sheet = { query: '', ...cfg };
@@ -1679,10 +1705,11 @@
       <div class="sheet-backdrop" data-action="sheet-close"></div>
       <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="${esc(cfg.title)}">
         <div class="sheet-head"><b>${esc(cfg.title)}</b><button class="icon-btn" data-action="sheet-close" aria-label="ปิด">${icon('x')}</button></div>
+        ${cfg.body ? `<div class="sheet-body">${cfg.body}</div>` : `
         ${cfg.search ? `<div class="sheet-search">${icon('search')}<input id="sheetSearch" type="search" placeholder="${esc(cfg.placeholder || 'ค้นหา')}" autocomplete="off"></div>` : ''}
-        <ul class="sheet-list" id="sheetList"></ul>
+        <ul class="sheet-list" id="sheetList"></ul>`}
       </div>`;
-    drawSheetList();
+    if (!cfg.body) drawSheetList();
     sheetEl.hidden = false;
     const on = sheetEl.querySelector('.sheet-list .is-on');
     if (on) on.scrollIntoView({ block: 'center' });
@@ -1714,10 +1741,11 @@
     document.body.classList.remove('no-scroll');
   }
 
-  function closeSheet() {
+  function closeSheet(after) {
     if (!sheet) return;
     hideSheet();
     skipPop = true;
+    afterPop = after || null;
     history.back();
   }
 
@@ -1771,7 +1799,7 @@
     // เปลี่ยนรุ่นแล้วปีที่เลือกไว้อยู่นอกช่วงปีที่ผลิตของรุ่นใหม่ → ให้เลือกปีใหม่ (ถ้าข้อมูลรุ่นไม่ครบ พิมพ์ปีเดิมซ้ำได้)
     if (m !== prev && state.year && ((m.from && state.year < m.from) || (m.to && state.year > m.to))) state.year = null;
     render();
-    scrollToStep(nextStepId());
+    toNextStep();
   }
 
   function setYear(y) {
@@ -1780,24 +1808,34 @@
     scrollToStep(nextStepId());
   }
 
-  // ข้อความเตือนมีบรรทัดจองไว้แล้ว (ไม่ดันเนื้อหาด้านล่าง ปุ่มที่กำลังแตะจะได้ไม่เลื่อนหนี)
-  function showYearError(msg) {
-    const err = $('#yearError');
-    if (err) err.textContent = msg;
+  // บรรทัดใต้ช่องปีจองที่ไว้แล้ว: ปกติเป็นคำแนะนำ มีปัญหาเป็นข้อความเตือนสีแดง (ไม่ดันเนื้อหาด้านล่าง ปุ่มที่กำลังแตะจะได้ไม่เลื่อนหนี)
+  function showYearError(msg, editing) {
+    const note = $('#yearNote');
+    if (!note) return;
+    note.textContent = msg || yearHint(editing);
+    note.classList.toggle('is-error', !!msg);
   }
 
   // ช่องพิมพ์ปี: ครบ 4 หลักและอยู่ในช่วงที่รับ → เลือกปีนั้นทันที (ไม่ต้องกดปุ่ม)
   function yearTyped(el) {
     const digits = yearDigits(el.value);
     if (digits !== el.value) el.value = digits;
-    if (digits.length < 4) { showYearError(''); return; }
+    if (digits.length < 4) { showYearError('', true); return; } // กำลังแก้ปี: ยังไม่โชว์ ค.ศ. ของปีเดิม
     const y = parseYear(digits);
     if (y) {
       el.blur(); // ปิดแป้นพิมพ์มือถือ
       setYear(y);
     } else {
-      showYearError(`ไม่พบปีนี้ กรุณาพิมพ์ปี พ.ศ. ${MIN_YEAR + 543} – ${MAX_YEAR + 543} (หรือ ค.ศ. ${MIN_YEAR} – ${MAX_YEAR})`);
+      showYearError(YEAR_RANGE_MSG);
     }
+  }
+
+  // ไปขั้นถัดไป: ถ้าเป็นช่องปี โฟกัสให้เลย (มือถือเปิดแป้นตัวเลขทันที ไม่ต้องแตะอีกครั้ง)
+  function toNextStep() {
+    const id = nextStepId();
+    const input = id === 'step-year' && $('#yearInput');
+    if (input) input.focus({ preventScroll: true });
+    scrollToStep(id);
   }
 
   function pickCustomModel() {
@@ -2074,32 +2112,27 @@
         state.customKind = val;
         state.body = null;
         render();
-        scrollToStep(nextStepId());
+        toNextStep();
         break;
       case 'cc':
         state.customKind = 'moto';
         state.customCc = Number(val);
         render();
-        scrollToStep(nextStepId());
+        toNextStep();
         break;
-      case 'year': setYear(Number(val)); break;
-      case 'year-more': {
-        // ทุกปีตั้งแต่ปีหน้าถึง พ.ศ. 2500 ไม่จำกัดตามช่วงปีของรุ่น (ข้อมูลรุ่นอาจไม่ครบ)
-        const ys = [];
-        for (let y = MAX_YEAR; y >= MIN_YEAR; y--) ys.push(y);
-        openSheet({
-          title: `เลือกปี${VTYPES[state.vtype].noun} (พ.ศ.)`,
-          items: ys.map((y) => ({ value: String(y), label: yearLabel(y), selected: state.year === y })),
-          onPick: (v) => setYear(Number(v)),
-        });
-        break;
-      }
       case 'body':
         state.body = val;
         render();
         scrollToStep('seePlans');
         break;
-      case 'see-plans':
+      case 'see-plans': {
+        // ช่องปีถูกแก้แต่ยังไม่ครบ/ไม่ตรงกับปีที่เลือกไว้ → ไม่ใช้ปีเดิมแบบเงียบ ๆ
+        const yi = $('#yearInput');
+        if (yi && parseYear(yearDigits(yi.value)) !== state.year) {
+          showYearError(yearDigits(yi.value).length < 4 ? YEAR_SHORT_MSG : YEAR_RANGE_MSG);
+          yi.focus();
+          break;
+        }
         if (!isComplete()) break;
         if (state.picksSig !== carSig()) {
           state.picks = [];
@@ -2108,6 +2141,7 @@
         }
         go('plans');
         break;
+      }
       case 'edit-car':
         if (depth() > 0 && history.state && history.state.view === 'plans') goBack();
         else go('search');
@@ -2123,9 +2157,14 @@
         break;
       case 'unpick': state.picks.splice(Number(val), 1); render(); break;
       case 'to-checkout': go('checkout'); break;
-      case 'to-summary':
-        state.sumQuote = newQuoteMeta();
-        go('summary');
+      case 'to-summary': openSummarySheet(); break;
+      case 'summary-go':
+        sheetEl.querySelectorAll('select[data-sum-field]').forEach((sel) => {
+          const f = sel.dataset.sumField;
+          if (f === 'deduct') state.deduct = sel.value === '1';
+          else state.sums[f] = Number(sel.value);
+        });
+        closeSheet(startSummary);
         break;
       case 'ncd': state.addons.ncd = Number(val); render(); break;
       case 'tpbi': state.addons.tpbi = Number(val); render(); break;
@@ -2190,7 +2229,7 @@
   document.addEventListener('focusout', (e) => {
     if (e.target.id !== 'yearInput') return;
     const n = yearDigits(e.target.value).length;
-    if (n > 0 && n < 4) showYearError('กรุณาพิมพ์ปีให้ครบ 4 หลัก เช่น 2555');
+    if (n > 0 && n < 4) showYearError(YEAR_SHORT_MSG);
   });
 
   window.addEventListener('resize', scaleQuote);
@@ -2201,7 +2240,13 @@
   }
 
   window.addEventListener('popstate', (e) => {
-    if (skipPop) { skipPop = false; return; }
+    if (skipPop) {
+      skipPop = false;
+      const after = afterPop;
+      afterPop = null;
+      if (after) after();
+      return;
+    }
     if (sheet) { hideSheet(); return; }
     state.view = (e.state && e.state.view) || 'search';
     render();

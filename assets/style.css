@@ -244,9 +244,26 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .chip.is-on { border-color: var(--green-600); background: var(--green-50); color: var(--green-900); font-weight: 600; }
 .one-col .chip { text-align: left; padding-left: 14px; }
 
-.year-field { margin: 14px 0 0; }
-.year-field input { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-.year-error { min-height: 1.5em; } /* จองบรรทัดข้อความเตือนไว้ */
+/* ปีรถ: ช่องพิมพ์ช่องเดียว */
+.year-field input {
+  width: 100%;
+  height: 56px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: var(--green-900);
+}
+.year-field input::placeholder { font-size: 17px; font-weight: 400; letter-spacing: 0; color: #9aa59f; }
+.year-field input:focus { outline: none; border-color: var(--green-600); box-shadow: 0 0 0 3px rgba(19, 132, 63, 0.14); }
+.year-field input.is-set { border-color: var(--green-600); background: var(--green-50); }
+.year-note { display: block; min-height: 1.5em; margin-top: 6px; text-align: center; font-size: 13px; color: var(--muted); } /* จองบรรทัดไว้ ไม่ดันเนื้อหาด้านล่าง */
+.year-note.is-error { color: var(--red); }
 
 .custom-box { margin-top: 12px; padding: 14px; border-radius: 14px; background: #f7f9f7; border: 1px solid var(--line); }
 .custom-box .field { margin-bottom: 0; }
@@ -797,6 +814,14 @@ body[data-view="summary"] main { max-width: 1160px; }
 .sheet-list button.is-on span { color: var(--green-900); font-weight: 600; }
 .sheet-list button.muted span { color: var(--green-700); }
 .sheet-empty { padding: 20px; text-align: center; color: var(--muted); }
+/* sheet แบบฟอร์ม (เลือกทุนประกันก่อนใบรวม) */
+.sheet-body { padding: 0 16px 16px; overflow-y: auto; }
+.sheet-note { font-size: 13.5px; color: var(--muted); margin-bottom: 10px; }
+.sheet-fields { display: grid; gap: 10px; margin-bottom: 16px; }
+.sheet-fields .mini-select { padding: 8px 14px 10px; }
+.sheet-fields .mini-select > span { font-size: 13px; color: var(--ink-2); }
+.sheet-fields .mini-select > span small { color: var(--muted); font-size: 12px; }
+.sheet-body .btn .ic { width: 20px; height: 20px; }
 
 .toast {
   position: fixed;
