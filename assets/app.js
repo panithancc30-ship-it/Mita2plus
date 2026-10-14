@@ -14,13 +14,19 @@
     models: b.models.map(([name, cc, from, to]) => ({ name, kind: 'moto', cc, from, to })),
   }));
   const THIS_YEAR = new Date().getFullYear();
-  const OLDEST_YEAR = THIS_YEAR - 30;
+  const OLDEST_YEAR = THIS_YEAR - 30; // ปุ่มปีลัดแสดงเฉพาะช่วงนี้
+  const MIN_YEAR = 1957; // พ.ศ. 2500 — ปีเก่าสุดที่พิมพ์/เลือกเองได้
+  const MAX_YEAR = THIS_YEAR + 1; // รถรุ่นปีถัดไปที่ออกขายก่อนสิ้นปี
   const STORE_KEY = 'mt-quote-state-v2';
   const TOP_MODELS = 8;
   const TOP_YEARS = 6;
   const MAX_PICKS = 4; // จำนวนแผนสูงสุดต่อใบเสนอราคา (ให้ตารางเปรียบเทียบยังอยู่ใน A4 หน้าเดียว)
   const PAGE_W = 794; // A4 ที่ 96dpi
   const PAGE_H = 1122;
+  // A4 แนวนอน (ใบเสนอราคารวมทุกแผน) — สูง 793 ไม่ใช่ 794 เพราะกระดาษจริงสูง 793.7px ถ้าเกินจะพิมพ์มีหน้าว่างแทรก
+  const LAND_W = 1122;
+  const LAND_H = 793;
+  const MAX_COLS_LAND = 8; // จำนวนแผนสูงสุดต่อหน้าในใบรวม (เกินนี้ขึ้นหน้าใหม่)
 
   const KINDS = {
     car: { label: 'รถเก๋ง / SUV / PPV', short: 'เก๋ง / SUV' },
@@ -63,7 +69,16 @@
     return n.toLocaleString('th-TH', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
   };
   const signed = (n) => `${n < 0 ? '-' : '+'}${money(Math.abs(n))}`;
-  const yearLabel = (y) => `${y} (${y + 543})`;
+  const yearLabel = (y) => `${y + 543} (${y})`; // พ.ศ. (ค.ศ.)
+  // ปีที่พิมพ์เอง: แปลงเลขไทย ๐–๙ ตัดอักขระอื่น (เช่น "พ.ศ.") เหลือ 4 หลัก
+  const yearDigits = (s) => String(s).replace(/[๐-๙]/g, (d) => d.charCodeAt(0) - 0x0e50).replace(/\D/g, '').slice(0, 4);
+  // รับทั้ง พ.ศ. และ ค.ศ. (ช่วงตัวเลขไม่ทับกัน) → ปี ค.ศ. หรือ null ถ้าไม่อยู่ในช่วงที่รับ
+  function parseYear(digits) {
+    if (digits.length !== 4) return null;
+    let y = Number.parseInt(digits, 10);
+    if (y >= 2400) y -= 543;
+    return y >= MIN_YEAR && y <= MAX_YEAR ? y : null;
+  }
 
   const ICONS = {
     check: '<path d="M5 12.5l4.2 4.2L19 7"/>',
@@ -84,6 +99,7 @@
     shield: '<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/><path d="M8.7 12l2.3 2.3 4.3-4.6"/>',
     refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/>',
     person: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c0-4 3.1-7 7-7s7 3 7 7"/>',
+    table: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 10h17M9 10v9M14.5 10v9"/>',
     phone: '<path d="M5.5 3.5h3.2l1.8 4.6-2.2 1.4a11.5 11.5 0 006.2 6.2l1.4-2.2 4.6 1.8v3.2a2 2 0 01-2.1 2A16.5 16.5 0 013.5 5.6a2 2 0 012-2.1z"/>',
   };
   const icon = (name, cls = '') =>
@@ -116,6 +132,7 @@
     addons: { ncd: 0, tpbi: 500000, cmi: false },
     customer: { name: '', phone: '' },
     quote: null,
+    sumQuote: null, // เลขที่/วันที่ของใบเสนอราคารวมทุกแผน
   });
 
   let state = initialState();
@@ -203,7 +220,7 @@
       kind,
       code,
       year: state.year,
-      age: THIS_YEAR - state.year,
+      age: Math.max(0, THIS_YEAR - state.year), // รถรุ่นปีหน้านับเป็น 0 ปี
       body: needsBody(kind) ? state.body : null,
       name: [brand.name, model.name].filter(Boolean).join(' '),
     };
@@ -634,16 +651,19 @@
     return o.type === 'truck' ? 0 : R.compulsory[v.code] || 0;
   }
 
+  // ใบเสนอราคารวมทุกแผนใช้เบี้ยตามหน้ารายการแผน ไม่มีส่วนลด/ความคุ้มครองเพิ่ม/พ.ร.บ.
+  const BASE_ADDONS = { ncd: 0, tpbi: R.plusRules.tpbiUpgrade[0].perPerson, cmi: false };
+
   // เบี้ยของแต่ละแผน แยกเป็นรายการ (ส่วนลด/ความคุ้มครองเพิ่ม/พ.ร.บ. ใช้ร่วมกันทุกแผน)
-  function pricing(o, v) {
+  function pricing(o, v, addons = state.addons) {
     const p = { premium: o.price, ncd: 0, tpbi: 0, cmi: 0 };
     if (o.type === 'plus') {
-      const amount = o.ncd[Math.min(state.addons.ncd, o.ncd.length - 1)];
+      const amount = o.ncd[Math.min(addons.ncd, o.ncd.length - 1)];
       if (amount) p.ncd = -amount;
-      const up = R.plusRules.tpbiUpgrade.find((x) => x.perPerson === state.addons.tpbi);
+      const up = R.plusRules.tpbiUpgrade.find((x) => x.perPerson === addons.tpbi);
       if (up) p.tpbi = up.amount;
     }
-    if (state.addons.cmi) p.cmi = cmiAmount(o, v);
+    if (addons.cmi) p.cmi = cmiAmount(o, v);
     p.total = round2(p.premium + p.ncd + p.tpbi + p.cmi);
     return p;
   }
@@ -683,7 +703,7 @@
     return [...list, ...C.common, 'คำนวณจากตารางเบี้ยตามโบรชัวร์ของบริษัทฯ บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัยและเปลี่ยนแปลงอัตราเบี้ยโดยไม่ต้องแจ้งให้ทราบล่วงหน้า'];
   }
 
-  function quoteConditions(v, offers) {
+  function quoteConditions(v, offers, addons = state.addons) {
     if (v.kind === 'pa') return paConditions(v, offers);
     if (v.kind === 'moto') return motoConditions(v, offers);
     const plusOffers = offers.filter((o) => o.type === 'plus');
@@ -711,7 +731,7 @@
     if (hasPid(/_com$/)) {
       list.push(`${scope}สำหรับรถยนต์นั่งใช้เชิงพาณิชย์ (รหัส 120) เฉพาะรถญี่ปุ่นและรถตลาด ต้องถ่ายรูปประกอบการพิจารณา และบันทึกเป็น QT เพื่อให้หน่วยงานรับประกันภัยพิจารณาอนุมัติ`);
     }
-    if (plusOffers.length && state.addons.ncd && !plusOffers.every((o) => o.campaign)) {
+    if (plusOffers.length && addons.ncd && !plusOffers.every((o) => o.campaign)) {
       list.push('ส่วนลดประวัติดีสำหรับรถที่ไม่มีเคลม (ไม่ว่าฝ่ายถูกหรือฝ่ายผิด) พิจารณาประวัติตั้งแต่ปีรับประกันภัย 2558');
     }
     if (truck) list.push('ส่วนลดประวัติพิจารณาตามนโยบายของบริษัทฯ ไม่มีการให้ส่วนลดกลุ่ม');
@@ -722,12 +742,13 @@
 
   // ---------- navigation ----------
   const depth = () => (history.state && history.state.depth) || 0;
-  const PARENT = { plans: 'search', checkout: 'plans', quote: 'checkout' };
+  const PARENT = { plans: 'search', checkout: 'plans', quote: 'checkout', summary: 'plans' };
 
   function canShow(view) {
     if (view === 'search') return true;
     if (!isComplete()) return false;
     if (view === 'plans') return true;
+    if (view === 'summary') return buildOffers(vehicle()).length >= 2;
     const n = pickedOffers(vehicle()).length;
     if (view === 'checkout') return n > 0;
     if (view === 'quote') return n > 0 && !!state.quote && !!state.customer.name.trim();
@@ -754,6 +775,10 @@
 
   // ---------- views ----------
   const app = $('#app');
+  // ขนาดกระดาษตอนพิมพ์/PDF: ใบรวมทุกแผนเป็น A4 แนวนอน นอกนั้นแนวตั้ง (สร้างด้วย JS ให้อยู่หลัง style.css จึงมีผลเสมอ)
+  const pageStyle = document.createElement('style');
+  pageStyle.id = 'pageSize';
+  document.head.appendChild(pageStyle);
 
   function render() {
     let view = state.view;
@@ -770,9 +795,13 @@
     }
     document.body.dataset.view = view;
     $('#backBtn').hidden = view === 'search';
-    const views = { search: renderSearch, plans: renderPlans, checkout: renderCheckout, quote: renderQuote };
+    const views = { search: renderSearch, plans: renderPlans, checkout: renderCheckout, quote: renderQuote, summary: renderSummary };
     app.innerHTML = views[view]();
-    if (view === 'quote') layoutQuote();
+    pageStyle.textContent = `@media print { @page { size: A4${view === 'summary' ? ' landscape' : ''}; margin: 0; } }`;
+    if (view === 'quote' || view === 'summary') {
+      layoutQuote();
+      prewarmImage();
+    }
     save();
   }
 
@@ -924,16 +953,21 @@
   }
 
   function stepYear(model) {
-    const ys = yearsFor(model);
-    const top = ys.slice(0, TOP_YEARS);
+    const top = yearsFor(model).slice(0, TOP_YEARS);
     if (state.year && !top.includes(state.year)) top.push(state.year);
+    top.sort((x, y) => y - x);
     return `
       <div class="step" id="step-year">
-        ${stepHead(3, `เลือกปี${VTYPES[state.vtype].noun}`, !!state.year)}
-        <div class="chip-grid">
+        ${stepHead(3, `เลือกปี${VTYPES[state.vtype].noun} (พ.ศ.)`, !!state.year)}
+        ${top.length ? `<div class="chip-grid span-last">
           ${top.map((y) => `<button class="chip ${state.year === y ? 'is-on' : ''}" data-action="year" data-value="${y}" aria-pressed="${state.year === y}">${yearLabel(y)}</button>`).join('')}
-        </div>
-        ${ys.length > TOP_YEARS ? `<button class="select-btn" data-action="year-more"><span>เลือกปีอื่นๆ</span>${icon('chev')}</button>` : ''}
+        </div>` : ''}
+        <button class="select-btn" data-action="year-more"><span>ดูทุกปี (${MAX_YEAR + 543} – ${MIN_YEAR + 543})</span>${icon('chev')}</button>
+        <label class="field year-field">
+          <span>หรือพิมพ์ปีเอง <small>(พ.ศ. หรือ ค.ศ.)</small></span>
+          <input id="yearInput" type="text" inputmode="numeric" pattern="[0-9]*" enterkeyhint="done" autocomplete="off" placeholder="เช่น ${THIS_YEAR + 543 - 10}" aria-describedby="yearError">
+          <em class="field-error year-error" id="yearError" aria-live="polite"></em>
+        </label>
       </div>`;
   }
 
@@ -1014,6 +1048,7 @@
       ${paSummary(v)}
       ${offers.length ? `
         ${notices.map((n) => `<div class="notice">${icon('info')}<p>${esc(n)}</p></div>`).join('')}
+        ${summaryButton(offers.length)}
         ${tabs.length > 2 ? `<div class="tabs ${tabs.length > 3 ? 'compact' : ''}" role="tablist">
           ${tabs.map(([id, label, n]) => `<button role="tab" class="tab ${state.filter === id ? 'is-on' : ''}" data-action="filter" data-value="${id}" aria-selected="${state.filter === id}">${label}<span>${n}</span></button>`).join('')}
         </div>` : ''}
@@ -1056,6 +1091,7 @@
       ${carSummary(v)}
       ${notices.map((n) => `<div class="notice">${icon('info')}<p>${esc(n)}</p></div>`).join('')}
       ${offers.length ? `
+        ${summaryButton(offers.length)}
         <div class="tabs" role="tablist">
           ${tabs.map(([id, label, n]) => `<button role="tab" class="tab ${state.filter === id ? 'is-on' : ''}" data-action="filter" data-value="${id}" aria-selected="${state.filter === id}">${label}<span>${n}</span></button>`).join('')}
         </div>
@@ -1160,6 +1196,17 @@
             </tbody></table>
           </div>` : ''}
       </article>`;
+  }
+
+  // ปุ่มไปใบเสนอราคารวมทุกแผน (ไม่ต้องเลือกทีละแผน) — มีแผนเดียวไม่ต้องเปรียบเทียบ
+  function summaryButton(n) {
+    if (n < 2) return '';
+    return `
+      <button class="summary-btn" data-action="to-summary">
+        <span class="summary-ico">${icon('table')}</span>
+        <span class="summary-text"><b>ใบเสนอราคารวมทุกแผน</b><small>เปรียบเทียบทั้ง ${n} แผนในตารางแนวนอน ไม่ต้องเลือกทีละแผน</small></span>
+        ${icon('chev', 'summary-go')}
+      </button>`;
   }
 
   function pickTray(v) {
@@ -1314,35 +1361,47 @@
   }
 
   // ---------- quote (A4 หนึ่งหน้า) ----------
-  function renderQuote() {
-    return `
+  const quoteActions = () => `
       <div class="quote-actions">
         <button class="btn btn-primary" data-action="save-image">${icon('image')}บันทึกรูป</button>
         <button class="btn btn-ghost" data-action="print">${icon('print')}PDF</button>
         <button class="btn btn-ghost" data-action="share">${icon('share')}แชร์</button>
-      </div>
+      </div>`;
+  const restartBtn = () => `<button class="btn btn-ghost btn-block restart" data-action="restart">${icon('refresh')}เช็คเบี้ย${isPaTab() ? 'คน' : 'คัน'}ใหม่</button>`;
+
+  function renderQuote() {
+    return `${quoteActions()}
       <p class="quote-hint">ใบเสนอราคาขนาด A4 หนึ่งหน้า · ถ่างนิ้วเพื่อซูมดู</p>
-      <div class="quote-stage" id="quoteStage">
-        <div class="quote-scaler" id="quoteScaler">${quotePage()}</div>
+      <div class="quote-stage">
+        <div class="quote-scaler">${quotePage()}</div>
       </div>
-      <button class="btn btn-ghost btn-block restart" data-action="restart">${icon('refresh')}เช็คเบี้ย${isPaTab() ? 'คน' : 'คัน'}ใหม่</button>`;
+      ${restartBtn()}`;
   }
 
   function quotePage() {
     const v = vehicle();
     const offers = pickedOffers(v);
     const n = offers.length;
-    const q = state.quote;
-    const date = new Date(q.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
-    const prices = offers.map((o) => pricing(o, v));
-    const anySum = offers.some(hasSum);
-    const anyDeduct = offers.some(hasDeduct);
-    const labelWidth = { 1: 46, 2: 34, 3: 28, 4: 25 }[n];
-    const tpbiFor = (o) => (o.type === 'plus' ? state.addons.tpbi : null);
-    const moto = v.kind === 'moto';
-    const pa = v.kind === 'pa';
+    return quoteShell({
+      v,
+      q: state.quote,
+      title: 'ใบเสนอราคา',
+      name: state.customer.name.trim(),
+      phone: state.customer.phone.trim(),
+      tableTitle: n > 1 ? `เปรียบเทียบแผนประกันภัย ${n} แผน` : 'แผนประกันภัย',
+      table: compareTable(v, offers, state.addons, { labelWidth: { 1: 46, 2: 34, 3: 28, 4: 25 }[n] }),
+      conditions: quoteConditions(v, offers),
+    });
+  }
 
-    const car = pa
+  // ใบเสนอราคาที่แสดงอยู่ (ใบรวมทุกแผนมีเลขที่ของตัวเอง)
+  const activeQuote = () => (state.view === 'summary' ? state.sumQuote : state.quote);
+  const quoteDate = (q) => new Date(q.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // รายละเอียดรถ / ผู้เอาประกันภัยในใบเสนอราคา: [หัวข้อ, ค่า (HTML)]
+  function carDetails(v) {
+    const moto = v.kind === 'moto';
+    const car = v.kind === 'pa'
       ? [
         ['ช่วงอายุ', `${v.ageLabel}`],
         ['ชั้นอาชีพ', `ชั้น ${v.cls}${v.student ? ' (นักเรียน / นักศึกษา)' : ''}`],
@@ -1356,6 +1415,18 @@
     if (moto) car.push(['ขนาดเครื่องยนต์', esc(ccLabel(v.model))], ['การใช้รถ', usageTh()], ['จังหวัดที่จดทะเบียน', REG_LABEL[v.body]]);
     else if (v.body) car.push(['ลักษณะรถ', BODY_LABEL[v.body]]);
     else if (v.kind === 'car') car.push(['การใช้รถ', usageTh()]);
+    return car;
+  }
+
+  // ตารางเปรียบเทียบแผน (แผนละคอลัมน์) — ใช้ทั้งใบเสนอราคาแนวตั้ง (แผนที่เลือก) และใบรวมทุกแผนแนวนอน
+  // opts.labelWidth = ความกว้างคอลัมน์หัวแถว (%), opts.land = ใบแนวนอน
+  function compareTable(v, offers, addons, opts) {
+    const n = offers.length;
+    const prices = offers.map((o) => pricing(o, v, addons));
+    const anySum = offers.some(hasSum);
+    const anyDeduct = offers.some(hasDeduct);
+    const tpbiFor = (o) => (o.type === 'plus' ? addons.tpbi : null);
+    const pa = v.kind === 'pa';
 
     const row = (label, cells, cls = '') => `<tr class="${cls}"><th>${label}</th>${cells.join('')}</tr>`;
     const cell = (val) => (val === undefined ? dash : `<td class="${val == null ? 'no' : ''}">${val == null ? 'ไม่คุ้มครอง' : val}</td>`);
@@ -1374,14 +1445,18 @@
       body.push(row(rowLabel(r, offers), offers.map((o) => cell(coverageValue(r.id, o, v, tpbiFor(o))))));
     });
     body.push(group('เบี้ยประกันภัย (บาท)'));
-    if (pa) body.push(row('เบี้ยประกันภัยต่อคนต่อปี', prices.map((p, i) => `<td>${money(p.premium)}<br><small>${offers[i].taxNote}</small></td>`)));
-    else body.push(row('เบี้ยประกันภัย<small>รวมภาษีมูลค่าเพิ่มและอากรแสตมป์</small>', prices.map((p) => `<td>${money(p.premium)}</td>`)));
+    if (pa) {
+      // ใบรวม: แผนในหน้าเดียวกันคิดภาษีแบบเดียวกัน → ใส่หมายเหตุที่หัวแถวครั้งเดียว ไม่ซ้ำทุกช่อง
+      const taxNotes = [...new Set(offers.map((o) => o.taxNote))];
+      if (opts.land && taxNotes.length === 1) body.push(row(`เบี้ยประกันภัยต่อคนต่อปี<small>${taxNotes[0]}</small>`, prices.map((p) => `<td>${money(p.premium)}</td>`)));
+      else body.push(row('เบี้ยประกันภัยต่อคนต่อปี', prices.map((p, i) => `<td>${money(p.premium)}<br><small>${offers[i].taxNote}</small></td>`)));
+    } else body.push(row('เบี้ยประกันภัย<small>รวมภาษีมูลค่าเพิ่มและอากรแสตมป์</small>', prices.map((p) => `<td>${money(p.premium)}</td>`)));
     if (prices.some((p) => p.ncd)) {
-      const label = R.plusRules.ncdLabels[state.addons.ncd];
+      const label = R.plusRules.ncdLabels[addons.ncd];
       body.push(row(`ส่วนลดประวัติดี<small>${esc(label)}</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td class="minus">${signed(prices[i].ncd)}</td>` : dash))));
     }
     if (prices.some((p) => p.tpbi)) {
-      body.push(row(`เพิ่มวงเงินชีวิตบุคคลภายนอก<small>เป็น ${money(state.addons.tpbi)} บาท/คน</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td>${signed(prices[i].tpbi)}</td>` : dash))));
+      body.push(row(`เพิ่มวงเงินชีวิตบุคคลภายนอก<small>เป็น ${money(addons.tpbi)} บาท/คน</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td>${signed(prices[i].tpbi)}</td>` : dash))));
     }
     if (prices.some((p) => p.cmi)) {
       body.push(row('พ.ร.บ.<small>รวมภาษีอากร</small>', prices.map((p) => (p.cmi ? `<td>${signed(p.cmi)}</td>` : dash))));
@@ -1389,32 +1464,8 @@
     body.push(row('รวมทั้งสิ้น', prices.map((p) => `<td>${money(p.total)}</td>`), 'total'));
 
     return `
-      <article class="qp" id="quoteDoc">
-        <div class="qp-inner">
-          <header class="qp-head">
-            <div class="qp-brand">
-              ${icon('shield')}
-              <div><small>${esc(AGENT.office)}</small><b>${esc(AGENT.name)}</b><span>${icon('phone')}โทร ${esc(AGENT.phone)}</span></div>
-            </div>
-            <div class="qp-title">
-              <h1>ใบเสนอราคา</h1>
-              <p>${productTitle(v)}</p>
-              <p class="qp-insurer">ผู้รับประกันภัย บริษัท มิตรแท้ประกันภัย จำกัด (มหาชน)</p>
-            </div>
-          </header>
-          <div class="qp-meta">
-            <div><small>เรียน</small><b>${esc(state.customer.name.trim())}</b>${state.customer.phone.trim() ? `<span>โทร ${esc(state.customer.phone.trim())}</span>` : ''}</div>
-            <div><small>เลขที่</small><b>${esc(q.no)}</b></div>
-            <div><small>วันที่</small><b>${date}</b></div>
-          </div>
-          <section class="qp-sec">
-            <h4>รายละเอียด${pa ? 'ผู้เอาประกันภัย' : moto ? 'รถจักรยานยนต์' : 'รถยนต์'}</h4>
-            <dl class="qp-car ${moto ? 'is-moto' : ''} ${pa ? 'is-pa' : ''}">${car.map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>
-          </section>
-          <section class="qp-sec">
-            <h4>${n > 1 ? `เปรียบเทียบแผนประกันภัย ${n} แผน` : 'แผนประกันภัย'}</h4>
             <table class="qp-table">
-              <colgroup><col style="width:${labelWidth}%">${offers.map(() => '<col>').join('')}</colgroup>
+              <colgroup><col style="width:${opts.labelWidth}%">${offers.map(() => '<col>').join('')}</colgroup>
               <thead>
                 <tr>
                   <th></th>
@@ -1427,11 +1478,44 @@
                 </tr>
               </thead>
               <tbody>${body.join('')}</tbody>
-            </table>
+            </table>`;
+  }
+
+  // โครงใบเสนอราคาหนึ่งหน้า: หัวกระดาษ · ผู้รับ · รายละเอียดรถ · ตาราง · เงื่อนไข · ท้ายกระดาษ
+  function quoteShell(o) {
+    const { v, q } = o;
+    const moto = v.kind === 'moto';
+    const pa = v.kind === 'pa';
+    return `
+      <article class="qp${o.land ? ' is-land' : ''}">
+        <div class="qp-inner">
+          <header class="qp-head">
+            <div class="qp-brand">
+              ${icon('shield')}
+              <div><small>${esc(AGENT.office)}</small><b>${esc(AGENT.name)}</b><span>${icon('phone')}โทร ${esc(AGENT.phone)}</span></div>
+            </div>
+            <div class="qp-title">
+              <h1>${o.title}</h1>
+              <p>${productTitle(v)}</p>
+              <p class="qp-insurer">ผู้รับประกันภัย บริษัท มิตรแท้ประกันภัย จำกัด (มหาชน)</p>
+            </div>
+          </header>
+          <div class="qp-meta">
+            <div><small>เรียน</small><b${o.nameAttr ? ' data-cust-name' : ''}>${esc(o.name)}</b>${o.phone ? `<span>โทร ${esc(o.phone)}</span>` : ''}</div>
+            <div><small>เลขที่</small><b>${esc(q.no)}</b></div>
+            <div><small>วันที่</small><b>${quoteDate(q)}</b></div>
+          </div>
+          <section class="qp-sec">
+            <h4>รายละเอียด${pa ? 'ผู้เอาประกันภัย' : moto ? 'รถจักรยานยนต์' : 'รถยนต์'}</h4>
+            <dl class="qp-car ${moto ? 'is-moto' : ''} ${pa ? 'is-pa' : ''}">${carDetails(v).map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>
+          </section>
+          <section class="qp-sec">
+            <h4>${o.tableTitle}</h4>
+            ${o.table}
           </section>
           <section class="qp-sec qp-cond">
             <h4>เงื่อนไข</h4>
-            <ol>${quoteConditions(v, offers).map((c) => `<li>${esc(c)}</li>`).join('')}</ol>
+            <ol>${o.conditions.map((c) => `<li>${esc(c)}</li>`).join('')}</ol>
           </section>
           <footer class="qp-foot">
             <span>Mittare Contact Center <b>${R.contact.center}</b></span>
@@ -1441,59 +1525,145 @@
       </article>`;
   }
 
-  // ย่อขนาดตัวอักษรจนเนื้อหาพอดี A4 หนึ่งหน้า แล้วย่อทั้งหน้าให้พอดีความกว้างจอ
+  const pageSize = (page) => (page.classList.contains('is-land') ? [LAND_W, LAND_H] : [PAGE_W, PAGE_H]);
+
+  // ย่อขนาดตัวอักษรของแต่ละหน้าจนเนื้อหาพอดี A4 หนึ่งหน้า แล้วย่อทั้งหน้าให้พอดีความกว้างจอ
   function layoutQuote() {
-    const page = $('#quoteDoc');
-    if (!page) return;
+    document.querySelectorAll('#app .qp').forEach(fitPage);
+    scaleQuote();
+  }
+
+  function fitPage(page) {
     const inner = page.querySelector('.qp-inner');
+    const pageH = pageSize(page)[1];
+    // ใบแนวนอนมีหลายคอลัมน์ → เช็คข้อความล้นช่องด้วย (ตอนวัด CSS เพิ่ม padding ช่องไว้เผื่อ)
+    const cells = page.classList.contains('is-land') ? [...page.querySelectorAll('.qp-table thead th, .qp-table td')] : [];
+    const tooBig = () => inner.offsetHeight > pageH - 24 || cells.some((c) => c.scrollWidth > c.clientWidth);
     // วัดความสูงจริงของเนื้อหา (ไม่ยืดเต็มหน้า) และเผื่อที่ว่างไว้ เพราะตอนบันทึกรูปตัวอักษรกว้างกว่าบนจอเล็กน้อย
     page.classList.add('is-measuring');
     let fs = 13;
     page.style.setProperty('--qfs', `${fs}px`);
-    while (inner.offsetHeight > PAGE_H - 24 && fs > 8) {
+    while (tooBig() && fs > 8) {
       fs -= 0.25;
       page.style.setProperty('--qfs', `${fs}px`);
     }
     page.classList.remove('is-measuring');
-    scaleQuote();
   }
 
   function scaleQuote() {
-    const stage = $('#quoteStage');
-    const scaler = $('#quoteScaler');
-    if (!stage || !scaler) return;
-    const s = Math.min(1, stage.clientWidth / PAGE_W);
-    scaler.style.transform = `scale(${s})`;
-    stage.style.height = `${Math.ceil(PAGE_H * s)}px`;
+    document.querySelectorAll('#app .quote-stage').forEach((stage) => {
+      const scaler = stage.querySelector('.quote-scaler');
+      const page = stage.querySelector('.qp');
+      if (!scaler || !page) return;
+      const [w, h] = pageSize(page);
+      const s = Math.min(1, stage.clientWidth / w);
+      scaler.style.transform = `scale(${s})`;
+      stage.style.height = `${Math.ceil(h * s)}px`;
+    });
+  }
+
+  // ---------- ใบเสนอราคารวมทุกแผน (A4 แนวนอน ไม่ต้องเลือกทีละแผน) ----------
+  // ทุกแผนที่ซื้อได้ ตามทุนประกัน/Deduct ที่ตั้งไว้ในหน้ารายการแผน (ไม่สนแท็บกรองชั้น) เรียงตามชั้น → ระดับ → ราคา
+  const summaryOffers = (v) => buildOffers(v).sort(planOrder);
+
+  // แบ่งหน้าไม่เกิน MAX_COLS_LAND แผน: แยกตามสินค้าก่อน (สินค้าที่มีแผนเยอะ เช่น PLV แบ่งเท่า ๆ กัน)
+  // แล้วรวมชุดที่ติดกันเข้าหน้าเดียวกันถ้ายังไม่เกิน — รถยนต์/มอเตอร์ไซค์จึงได้หน้าเดียว
+  function summaryPages(offers) {
+    const groups = [];
+    offers.forEach((o) => {
+      const id = o.pid || o.type;
+      const g = groups[groups.length - 1];
+      if (g && g.id === id) g.items.push(o);
+      else groups.push({ id, items: [o] });
+    });
+    const pages = [];
+    groups.forEach(({ items }) => {
+      const size = Math.ceil(items.length / Math.ceil(items.length / MAX_COLS_LAND));
+      for (let i = 0; i < items.length; i += size) {
+        const chunk = items.slice(i, i + size);
+        const last = pages[pages.length - 1];
+        if (last && last.length + chunk.length <= MAX_COLS_LAND) last.push(...chunk);
+        else pages.push(chunk);
+      }
+    });
+    return pages;
+  }
+
+  // ใบรวมใช้เบี้ยตามหน้ารายการแผน → บอกว่ายังไม่หัก/ไม่รวมอะไร (เฉพาะที่ใช้ได้จริงกับแผนในหน้านั้น)
+  function premiumNote(v, offers) {
+    const parts = [];
+    if (offers.some((o) => o.type === 'plus' && !o.campaign && o.ncd.some(Boolean))) parts.push('ยังไม่หักส่วนลดประวัติดี');
+    if (offers.some((o) => cmiAmount(o, v))) parts.push('ยังไม่รวม พ.ร.บ.');
+    return parts.length ? `เบี้ย${parts.join(' และ')}` : '';
+  }
+
+  function summaryPage(v, offers, i, pages, total) {
+    const n = offers.length;
+    const note = premiumNote(v, offers);
+    return quoteShell({
+      land: true,
+      v,
+      q: state.sumQuote,
+      title: 'ใบเสนอราคา · รวมทุกแผน',
+      name: state.customer.name.trim() || '—',
+      nameAttr: true,
+      tableTitle: `เปรียบเทียบแผนประกันภัยทั้งหมด ${total} แผน${pages > 1 ? ` · หน้า ${i + 1}/${pages}` : ''}${note ? `<span>${note}</span>` : ''}`,
+      table: compareTable(v, offers, BASE_ADDONS, { land: true, labelWidth: { 1: 30, 2: 27, 3: 25, 4: 23, 5: 21, 6: 20, 7: 19, 8: 18 }[n] }),
+      conditions: quoteConditions(v, offers, BASE_ADDONS),
+    });
+  }
+
+  function renderSummary() {
+    const v = vehicle();
+    if (!state.sumQuote) state.sumQuote = newQuoteMeta();
+    const offers = summaryOffers(v);
+    const pages = summaryPages(offers);
+    return `
+      <div class="sum-chrome">
+        ${quoteActions()}
+        <label class="field sum-name">
+          <span>ชื่อลูกค้า <small>(ไม่บังคับ)</small></span>
+          <input id="sumName" type="text" value="${esc(state.customer.name)}" placeholder="เช่น คุณสมชาย ใจดี" autocomplete="name" maxlength="80">
+        </label>
+        <p class="quote-hint">ใบเสนอราคา A4 แนวนอน · รวม ${offers.length} แผน${pages.length > 1 ? ` · ${pages.length} หน้า` : ''} · ถ่างนิ้วหรือหมุนจอเพื่อดูชัดขึ้น</p>
+      </div>
+      ${pages.map((chunk, i) => `
+      <div class="quote-stage">
+        <div class="quote-scaler is-land">${summaryPage(v, chunk, i, pages.length, offers.length)}</div>
+      </div>`).join('')}
+      <div class="sum-chrome">${restartBtn()}</div>`;
   }
 
   const productTitle = (v) => (v.kind === 'pa' ? 'ประกันภัยอุบัติเหตุส่วนบุคคล' : `ประกันภัย${v.kind === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}ภาคสมัครใจ`);
   const shareTitle = () => {
     const k = vehicle().kind;
-    return `ใบเสนอราคาประกันภัย${k === 'pa' ? 'อุบัติเหตุส่วนบุคคล' : k === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}`;
+    return `ใบเสนอราคาประกันภัย${k === 'pa' ? 'อุบัติเหตุส่วนบุคคล' : k === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}${state.view === 'summary' ? ' (รวมทุกแผน)' : ''}`;
   };
 
   function shareText() {
     const v = vehicle();
-    const offers = pickedOffers(v);
-    const lines = [
-      `${shareTitle()} มิตรแท้ประกันภัย`,
-      `เลขที่ ${state.quote.no}`,
-      `ลูกค้า: ${state.customer.name.trim()}`,
-      v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`,
-      '',
-    ];
+    const summary = state.view === 'summary';
+    const offers = summary ? summaryOffers(v) : pickedOffers(v);
+    const name = state.customer.name.trim();
+    const lines = [`${shareTitle()} มิตรแท้ประกันภัย`, `เลขที่ ${activeQuote().no}`];
+    if (name || !summary) lines.push(`ลูกค้า: ${name}`);
+    lines.push(v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`, '');
     offers.forEach((o, i) => {
-      const p = pricing(o, v);
+      const p = pricing(o, v, summary ? BASE_ADDONS : state.addons);
       lines.push(`${i + 1}) ${o.type === 'pa' ? `${o.product} ${o.planShort}`.trim() : `${shortName(o)} ${o.product}`}`);
       lines.push(`   ${pickDetail(o)}`);
-      lines.push(`   เบี้ยรวม ${money(p.total)} บาท`);
+      lines.push(summary ? `   เบี้ย ${money(p.total)} บาท/ปี` : `   เบี้ยรวม ${money(p.total)} บาท`);
     });
-    const extra = [];
-    if (state.addons.ncd && offers.some((o) => o.type === 'plus')) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[state.addons.ncd]}`);
-    if (state.addons.tpbi !== 500000 && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
-    if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
-    if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
+    if (summary) {
+      const note = premiumNote(v, offers);
+      if (note) lines.push('', `(${note})`);
+    } else {
+      const extra = [];
+      if (state.addons.ncd && offers.some((o) => o.type === 'plus')) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[state.addons.ncd]}`);
+      if (state.addons.tpbi !== 500000 && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
+      if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
+      if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
+    }
     lines.push('', `${AGENT.office} ${AGENT.name}`, `โทร ${AGENT.phone}`);
     return lines.join('\n');
   }
@@ -1514,6 +1684,8 @@
       </div>`;
     drawSheetList();
     sheetEl.hidden = false;
+    const on = sheetEl.querySelector('.sheet-list .is-on');
+    if (on) on.scrollIntoView({ block: 'center' });
     document.body.classList.add('no-scroll');
     history.pushState({ view: state.view, depth: depth() + 1, sheet: true }, '');
     const input = $('#sheetSearch');
@@ -1596,9 +1768,36 @@
     state.customModel = false;
     const m = getModel();
     if (!prev || m.kind !== prev.kind) state.body = null;
-    if (state.year && !yearsFor(m).includes(state.year)) state.year = null;
+    // เปลี่ยนรุ่นแล้วปีที่เลือกไว้อยู่นอกช่วงปีที่ผลิตของรุ่นใหม่ → ให้เลือกปีใหม่ (ถ้าข้อมูลรุ่นไม่ครบ พิมพ์ปีเดิมซ้ำได้)
+    if (m !== prev && state.year && ((m.from && state.year < m.from) || (m.to && state.year > m.to))) state.year = null;
     render();
     scrollToStep(nextStepId());
+  }
+
+  function setYear(y) {
+    state.year = y;
+    render();
+    scrollToStep(nextStepId());
+  }
+
+  // ข้อความเตือนมีบรรทัดจองไว้แล้ว (ไม่ดันเนื้อหาด้านล่าง ปุ่มที่กำลังแตะจะได้ไม่เลื่อนหนี)
+  function showYearError(msg) {
+    const err = $('#yearError');
+    if (err) err.textContent = msg;
+  }
+
+  // ช่องพิมพ์ปี: ครบ 4 หลักและอยู่ในช่วงที่รับ → เลือกปีนั้นทันที (ไม่ต้องกดปุ่ม)
+  function yearTyped(el) {
+    const digits = yearDigits(el.value);
+    if (digits !== el.value) el.value = digits;
+    if (digits.length < 4) { showYearError(''); return; }
+    const y = parseYear(digits);
+    if (y) {
+      el.blur(); // ปิดแป้นพิมพ์มือถือ
+      setYear(y);
+    } else {
+      showYearError(`ไม่พบปีนี้ กรุณาพิมพ์ปี พ.ศ. ${MIN_YEAR + 543} – ${MAX_YEAR + 543} (หรือ ค.ศ. ${MIN_YEAR} – ${MAX_YEAR})`);
+    }
   }
 
   function pickCustomModel() {
@@ -1646,6 +1845,15 @@
     render();
   }
 
+  function newQuoteMeta() {
+    const now = new Date();
+    const pad = (x) => String(x).padStart(2, '0');
+    return {
+      no: `MT${String(now.getFullYear() + 543).slice(-2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
+      date: now.toISOString(),
+    };
+  }
+
   function makeQuote() {
     const name = state.customer.name.trim();
     const phone = state.customer.phone.trim();
@@ -1655,85 +1863,122 @@
     $('#phoneError').hidden = !phoneBad;
     if (!name) { $('#custName').focus(); return; }
     if (phoneBad) { $('#custPhone').focus(); return; }
-    const now = new Date();
-    const pad = (x) => String(x).padStart(2, '0');
-    state.quote = {
-      no: `MT${String(now.getFullYear() + 543).slice(-2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
-      date: now.toISOString(),
-    };
+    state.quote = newQuoteMeta();
     go('quote');
   }
 
+  // โหลดสคริปต์ครั้งเดียว (จำ promise ไว้ กดซ้ำระหว่างโหลดก็รอตัวเดิม) — โหลดไม่สำเร็จให้ลองใหม่ได้
+  const scripts = {};
   function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) return resolve();
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
+    if (!scripts[src]) {
+      scripts[src] = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => { delete scripts[src]; s.remove(); reject(new Error(`load ${src}`)); };
+        document.head.appendChild(s);
+      });
+    }
+    return scripts[src];
   }
+
+  const IMAGE_LIB = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js';
 
   // html-to-image อ่านสไตล์ชีตข้าม origin ของ Google Fonts ไม่ได้ → ฝังฟอนต์ไทย/ละตินเองเป็น data URL
   // ไม่เช่นนั้นรูปจะใช้ฟอนต์สำรองที่กว้างกว่า ทำให้ข้อความตัดบรรทัดทับกัน
   let fontCSS = null;
   async function embeddedFontCSS() {
-    if (fontCSS !== null) return fontCSS;
-    try {
-      const link = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
-      const raw = await (await fetch(link.href)).text();
-      let css = raw.split('/* ')
-        .filter((b) => b.startsWith('thai */') || b.startsWith('latin */'))
-        .map((b) => b.slice(b.indexOf('*/') + 2))
-        .join('\n');
-      const urls = [...new Set(css.match(/https:\/\/fonts\.gstatic\.com\/[^)'"\s]+/g) || [])];
-      const toDataURL = (blob) => new Promise((resolve) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(fr.result);
-        fr.readAsDataURL(blob);
+    if (!fontCSS) {
+      fontCSS = (async () => {
+        const link = document.querySelector('link[href*="fonts.googleapis.com/css2"]');
+        const raw = await (await fetch(link.href)).text();
+        let css = raw.split('/* ')
+          .filter((b) => b.startsWith('thai */') || b.startsWith('latin */'))
+          .map((b) => b.slice(b.indexOf('*/') + 2))
+          .join('\n');
+        const urls = [...new Set(css.match(/https:\/\/fonts\.gstatic\.com\/[^)'"\s]+/g) || [])];
+        const toDataURL = (blob) => new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.readAsDataURL(blob);
+        });
+        await Promise.all(urls.map(async (u) => {
+          const data = await toDataURL(await (await fetch(u)).blob());
+          css = css.split(u).join(data);
+        }));
+        return css;
+      })().catch(() => {
+        fontCSS = null; // ครั้งหน้าลองใหม่
+        return '';
       });
-      await Promise.all(urls.map(async (u) => {
-        const data = await toDataURL(await (await fetch(u)).blob());
-        css = css.split(u).join(data);
-      }));
-      fontCSS = css;
-    } catch (e) {
-      fontCSS = '';
     }
     return fontCSS;
   }
 
+  // เตรียมไลบรารีและฟอนต์ไว้ล่วงหน้า — สร้างรูปหลายหน้าใช้เวลานาน ถ้าเริ่มโหลดตอนกดปุ่ม อาจแชร์ไม่ทัน (สิทธิ์จากการแตะหมดอายุ)
+  function prewarmImage() {
+    const run = () => { loadScript(IMAGE_LIB).catch(() => {}); embeddedFontCSS(); };
+    if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 2000 }); else setTimeout(run, 500);
+  }
+
+  function downloadFile(file) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  // รูปที่สร้างล่าสุด (ใช้ซ้ำถ้าหน้าไม่เปลี่ยน เช่น แชร์ไม่ทันแล้วกดใหม่)
+  let imageCache = null;
+
   async function saveImage(btn) {
+    const pages = [...document.querySelectorAll('#app .qp')];
+    if (!pages.length) return;
+    const key = pages.map((p) => p.outerHTML).join('');
+    // ล็อกช่องชื่อลูกค้าระหว่างสร้างรูป ไม่ให้แต่ละหน้าได้ชื่อไม่ตรงกัน
+    const nameInput = $('#sumName');
+    if (nameInput) nameInput.readOnly = true;
     btn.disabled = true;
-    toast('กำลังสร้างรูปภาพ…');
     try {
-      await loadScript('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js');
-      const blob = await window.htmlToImage.toBlob($('#quoteDoc'), {
-        width: PAGE_W,
-        height: PAGE_H,
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-        fontEmbedCSS: await embeddedFontCSS(),
-      });
-      const file = new File([blob], `ใบเสนอราคา-${state.quote.no}.png`, { type: 'image/png' });
+      let files = imageCache && imageCache.key === key ? imageCache.files : null;
+      if (!files) {
+        toast('กำลังสร้างรูปภาพ…');
+        await loadScript(IMAGE_LIB);
+        const fontEmbedCSS = await embeddedFontCSS();
+        const base = `${state.view === 'summary' ? 'ใบเสนอราคารวม' : 'ใบเสนอราคา'}-${activeQuote().no}`;
+        files = [];
+        for (let i = 0; i < pages.length; i++) {
+          if (pages.length > 1) toast(`กำลังสร้างรูป ${i + 1}/${pages.length}…`);
+          const [width, height] = pageSize(pages[i]);
+          const blob = await window.htmlToImage.toBlob(pages[i], { width, height, pixelRatio: 2, backgroundColor: '#ffffff', fontEmbedCSS });
+          files.push(new File([blob], pages.length > 1 ? `${base}-${i + 1}.png` : `${base}.png`, { type: 'image/png' }));
+        }
+        if (fontEmbedCSS) imageCache = { key, files }; // ฝังฟอนต์ไม่สำเร็จ → ไม่เก็บไว้ใช้ซ้ำ กดใหม่จะลองสร้างใหม่
+      }
       const mobile = window.matchMedia('(pointer: coarse)').matches;
-      if (mobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: shareTitle() });
+      if (mobile && navigator.canShare && navigator.canShare({ files })) {
+        try {
+          await navigator.share({ files, title: shareTitle() });
+        } catch (e) {
+          // สร้างรูปนานจนสิทธิ์จากการแตะหมดอายุ — รูปพร้อมแล้ว แตะอีกครั้งแชร์ได้ทันที
+          if (e && e.name === 'NotAllowedError') { toast('รูปพร้อมแล้ว แตะ “บันทึกรูป” อีกครั้งเพื่อแชร์'); return; }
+          throw e;
+        }
       } else {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-        toast('บันทึกรูปภาพแล้ว');
+        for (let i = 0; i < files.length; i++) {
+          if (i) await new Promise((r) => setTimeout(r, 300)); // เบราว์เซอร์บางตัวทิ้งไฟล์ถ้าดาวน์โหลดติดกันเร็วเกินไป
+          downloadFile(files[i]);
+        }
+        toast(files.length > 1 ? `กำลังบันทึกรูปภาพ ${files.length} หน้า (ถ้าเบราว์เซอร์ถาม ให้กดอนุญาตดาวน์โหลดหลายไฟล์)` : 'บันทึกรูปภาพแล้ว');
       }
     } catch (e) {
       if (e && e.name !== 'AbortError') toast('สร้างรูปภาพไม่สำเร็จ ลองใช้ปุ่ม PDF');
     } finally {
       btn.disabled = false;
+      if (nameInput) nameInput.readOnly = false;
     }
   }
 
@@ -1837,17 +2082,15 @@
         render();
         scrollToStep(nextStepId());
         break;
-      case 'year':
-        state.year = Number(val);
-        render();
-        scrollToStep(nextStepId());
-        break;
+      case 'year': setYear(Number(val)); break;
       case 'year-more': {
-        const model = getModel();
+        // ทุกปีตั้งแต่ปีหน้าถึง พ.ศ. 2500 ไม่จำกัดตามช่วงปีของรุ่น (ข้อมูลรุ่นอาจไม่ครบ)
+        const ys = [];
+        for (let y = MAX_YEAR; y >= MIN_YEAR; y--) ys.push(y);
         openSheet({
-          title: `เลือกปี${VTYPES[state.vtype].noun}`,
-          items: yearsFor(model).map((y) => ({ value: String(y), label: yearLabel(y), selected: state.year === y })),
-          onPick: (v) => { state.year = Number(v); render(); scrollToStep(nextStepId()); },
+          title: `เลือกปี${VTYPES[state.vtype].noun} (พ.ศ.)`,
+          items: ys.map((y) => ({ value: String(y), label: yearLabel(y), selected: state.year === y })),
+          onPick: (v) => setYear(Number(v)),
         });
         break;
       }
@@ -1880,6 +2123,10 @@
         break;
       case 'unpick': state.picks.splice(Number(val), 1); render(); break;
       case 'to-checkout': go('checkout'); break;
+      case 'to-summary':
+        state.sumQuote = newQuoteMeta();
+        go('summary');
+        break;
       case 'ncd': state.addons.ncd = Number(val); render(); break;
       case 'tpbi': state.addons.tpbi = Number(val); render(); break;
       case 'cmi': state.addons.cmi = !state.addons.cmi; render(); break;
@@ -1920,18 +2167,38 @@
 
   document.addEventListener('input', (e) => {
     const el = e.target;
-    if (el.id === 'sheetSearch' && sheet) { sheet.query = el.value; drawSheetList(); return; }
+    if (el.id === 'sheetSearch' && sheet) { sheet.query = el.value; drawSheetList(); $('#sheetList').scrollTop = 0; return; }
     if (el.id === 'custName') { state.customer.name = el.value; $('#nameError').hidden = true; save(); return; }
+    if (el.id === 'sumName') {
+      state.customer.name = el.value;
+      const shown = el.value.trim() || '—';
+      document.querySelectorAll('[data-cust-name]').forEach((n) => { n.textContent = shown; });
+      save();
+      return;
+    }
     if (el.id === 'custPhone') { state.customer.phone = el.value; $('#phoneError').hidden = true; save(); return; }
-    if (el.id === 'customModelName') { state.customModelName = el.value; save(); }
+    if (el.id === 'customModelName') { state.customModelName = el.value; save(); return; }
+    if (el.id === 'yearInput') yearTyped(el);
   });
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sheet) closeSheet();
+    if (e.key === 'Enter' && e.target.id === 'yearInput') e.target.blur();
+  });
+
+  // ออกจากช่องพิมพ์ปีทั้งที่ยังพิมพ์ไม่ครบ 4 หลัก → เตือน
+  document.addEventListener('focusout', (e) => {
+    if (e.target.id !== 'yearInput') return;
+    const n = yearDigits(e.target.value).length;
+    if (n > 0 && n < 4) showYearError('กรุณาพิมพ์ปีให้ครบ 4 หลัก เช่น 2555');
   });
 
   window.addEventListener('resize', scaleQuote);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutQuote);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(layoutQuote);
+    // ฟอนต์บางน้ำหนักโหลดเสร็จทีหลัง → จัดหน้าใหม่ให้วัดด้วยฟอนต์จริง
+    document.fonts.addEventListener('loadingdone', layoutQuote);
+  }
 
   window.addEventListener('popstate', (e) => {
     if (skipPop) { skipPop = false; return; }
@@ -1943,7 +2210,7 @@
 
   // ---------- boot ----------
   const hashView = location.hash.replace('#', '');
-  state.view = ['search', 'plans', 'checkout', 'quote'].includes(hashView) ? hashView : 'search';
+  state.view = ['search', 'plans', 'checkout', 'quote', 'summary'].includes(hashView) ? hashView : 'search';
   history.replaceState({ view: state.view, depth: 0 }, '', `#${state.view}`);
   render();
 
