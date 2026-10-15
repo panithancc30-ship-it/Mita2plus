@@ -743,7 +743,25 @@ body[data-view="plans"] main { padding-bottom: calc(150px + var(--safe-bottom));
 /* ---------- ใบเสนอราคารวมทุกแผน: A4 แนวนอน (1 หน้าต่อ .quote-stage) ---------- */
 body[data-view="summary"] main { max-width: 1160px; }
 .sum-chrome { max-width: 528px; margin: 0 auto; }
-.sum-name { margin-bottom: 8px; }
+.sum-opts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--green-100);
+  background: #fff;
+  text-align: left;
+}
+.sum-opts:hover { border-color: var(--green-600); }
+.sum-opts > span { flex: 1; min-width: 0; }
+.sum-opts b { display: block; font-size: 14px; font-weight: 600; color: var(--green-900); }
+.sum-opts small { display: block; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.sum-opts small span { white-space: nowrap; }
+.sum-opts em { flex: none; font-style: normal; font-weight: 600; font-size: 14px; color: #fff; background: var(--green-700); padding: 6px 14px; border-radius: 999px; }
+.sum-opts:disabled { opacity: 0.6; }
 .quote-stage + .quote-stage { margin-top: 16px; }
 .quote-scaler.is-land { width: 1122px; }
 .qp.is-land { width: 1122px; height: 793px; }
@@ -814,13 +832,26 @@ body[data-view="summary"] main { max-width: 1160px; }
 .sheet-list button.is-on span { color: var(--green-900); font-weight: 600; }
 .sheet-list button.muted span { color: var(--green-700); }
 .sheet-empty { padding: 20px; text-align: center; color: var(--muted); }
-/* sheet แบบฟอร์ม (เลือกทุนประกันก่อนใบรวม) */
-.sheet-body { padding: 0 16px 16px; overflow-y: auto; }
-.sheet-note { font-size: 13.5px; color: var(--muted); margin-bottom: 10px; }
-.sheet-fields { display: grid; gap: 10px; margin-bottom: 16px; }
-.sheet-fields .mini-select { padding: 8px 14px 10px; }
-.sheet-fields .mini-select > span { font-size: 13px; color: var(--ink-2); }
-.sheet-fields .mini-select > span small { color: var(--muted); font-size: 12px; }
+/* sheet แบบฟอร์ม: ตัวเลือกใบเสนอราคารวม */
+.sheet-body { padding: 0 16px 16px; overflow-y: auto; overscroll-behavior: contain; }
+.opt-sec { padding: 12px 0 4px; border-top: 1px solid var(--line); }
+.opt-sec:first-child { border-top: 0; padding-top: 2px; }
+.opt-sec h4 { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--green-700); margin-bottom: 8px; }
+.opt-sec h4 .ic { width: 18px; height: 18px; }
+.opt { margin-bottom: 12px; }
+.opt-label { font-size: 14.5px; font-weight: 500; margin-bottom: 6px; }
+.opt-label small { display: inline; margin-left: 6px; font-size: 12.5px; font-weight: 400; color: var(--muted); }
+.opt .seg button { min-height: 44px; }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
+.opt .mini-select { padding: 10px 12px; }
+.opt .mini-select select { font-size: 16px; }
+.opt .mini-select .ic { bottom: 50%; transform: translateY(50%); }
+.opt-info { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--ink-2); background: var(--green-50); padding: 8px 10px; border-radius: 10px; margin-bottom: 12px; }
+.opt-info .ic { width: 16px; height: 16px; color: var(--green-700); margin-top: 2px; }
+.opt-sec .field { margin-bottom: 10px; }
+.opt-sec .field input { height: 46px; }
+.sheet-body .notice { margin: 4px 0 10px; }
+.sheet-go { position: sticky; bottom: 0; margin-top: 6px; box-shadow: 0 -8px 16px #fff; }
 .sheet-body .btn .ic { width: 20px; height: 20px; }
 
 .toast {
