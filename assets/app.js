@@ -641,9 +641,6 @@
     return o.type === 'truck' ? 0 : R.compulsory[v.code] || 0;
   }
 
-  // ใบเสนอราคารวมทุกแผนใช้เบี้ยตามหน้ารายการแผน ไม่มีส่วนลด/ความคุ้มครองเพิ่ม/พ.ร.บ.
-  const BASE_ADDONS = { ncd: 0, tpbi: R.plusRules.tpbiUpgrade[0].perPerson, cmi: false };
-
   // เบี้ยของแต่ละแผน แยกเป็นรายการ (ส่วนลด/ความคุ้มครองเพิ่ม/พ.ร.บ. ใช้ร่วมกันทุกแผน)
   function pricing(o, v, addons = state.addons) {
     const p = { premium: o.price, ncd: 0, tpbi: 0, cmi: 0 };
@@ -1442,7 +1439,7 @@
       else body.push(row('เบี้ยประกันภัยต่อคนต่อปี', prices.map((p, i) => `<td>${money(p.premium)}<br><small>${offers[i].taxNote}</small></td>`)));
     } else body.push(row('เบี้ยประกันภัย<small>รวมภาษีมูลค่าเพิ่มและอากรแสตมป์</small>', prices.map((p) => `<td>${money(p.premium)}</td>`)));
     if (prices.some((p) => p.ncd)) {
-      const label = R.plusRules.ncdLabels[addons.ncd];
+      const label = R.plusRules.ncdLabels[ncdShown(addons.ncd, offers)];
       body.push(row(`ส่วนลดประวัติดี<small>${esc(label)}</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td class="minus">${signed(prices[i].ncd)}</td>` : dash))));
     }
     if (prices.some((p) => p.tpbi)) {
@@ -1491,7 +1488,7 @@
             </div>
           </header>
           <div class="qp-meta">
-            <div><small>เรียน</small><b${o.nameAttr ? ' data-cust-name' : ''}>${esc(o.name)}</b>${o.phone ? `<span>โทร ${esc(o.phone)}</span>` : ''}</div>
+            <div><small>เรียน</small><b>${esc(o.name)}</b>${o.phone ? `<span>โทร ${esc(o.phone)}</span>` : ''}</div>
             <div><small>เลขที่</small><b>${esc(q.no)}</b></div>
             <div><small>วันที่</small><b>${quoteDate(q)}</b></div>
           </div>
@@ -1579,11 +1576,11 @@
     return pages;
   }
 
-  // ใบรวมใช้เบี้ยตามหน้ารายการแผน → บอกว่ายังไม่หัก/ไม่รวมอะไร (เฉพาะที่ใช้ได้จริงกับแผนในหน้านั้น)
+  // บอกว่าเบี้ยยังไม่หัก/ไม่รวมอะไร ตามตัวเลือกที่เลือกไว้ (เฉพาะที่ใช้ได้จริงกับแผนในหน้านั้น)
   function premiumNote(v, offers) {
     const parts = [];
-    if (offers.some((o) => o.type === 'plus' && !o.campaign && o.ncd.some(Boolean))) parts.push('ยังไม่หักส่วนลดประวัติดี');
-    if (offers.some((o) => cmiAmount(o, v))) parts.push('ยังไม่รวม พ.ร.บ.');
+    if (!state.addons.ncd && offers.some((o) => o.type === 'plus' && !o.campaign && o.ncd.some(Boolean))) parts.push('ยังไม่หักส่วนลดประวัติดี');
+    if (!state.addons.cmi && offers.some((o) => cmiAmount(o, v))) parts.push('ยังไม่รวม พ.ร.บ.');
     return parts.length ? `เบี้ย${parts.join(' และ')}` : '';
   }
 
@@ -1596,11 +1593,17 @@
       q: state.sumQuote,
       title: 'ใบเสนอราคา · รวมทุกแผน',
       name: state.customer.name.trim() || '—',
-      nameAttr: true,
+      phone: state.customer.phone.trim(),
       tableTitle: `เปรียบเทียบแผนประกันภัยทั้งหมด ${total} แผน${pages > 1 ? ` · หน้า ${i + 1}/${pages}` : ''}${note ? `<span>${note}</span>` : ''}`,
-      table: compareTable(v, offers, BASE_ADDONS, { land: true, labelWidth: { 1: 30, 2: 27, 3: 25, 4: 23, 5: 21, 6: 20, 7: 19, 8: 18 }[n] }),
-      conditions: quoteConditions(v, offers, BASE_ADDONS),
+      table: compareTable(v, offers, state.addons, { land: true, labelWidth: { 1: 30, 2: 27, 3: 25, 4: 23, 5: 21, 6: 20, 7: 19, 8: 18 }[n] }),
+      conditions: quoteConditions(v, offers, state.addons),
     });
+  }
+
+  // ขั้นส่วนลดประวัติดีที่ใช้จริง — บางแผนมีขั้นน้อยกว่า (เช่น รถยุโรป/ตู้เย็นมีแค่ 1 ปี) pricing() ตัดตามแผน ป้ายจึงต้องตัดตามด้วย
+  function ncdShown(ncd, offers) {
+    const plus = offers.filter((o) => o.type === 'plus');
+    return plus.length ? Math.min(ncd, Math.max(...plus.map((o) => o.ncd.length)) - 1) : ncd;
   }
 
   function startSummary() {
@@ -1608,34 +1611,128 @@
     go('summary');
   }
 
-  // ก่อนเปิดใบรวม: เลือกทุนประกัน (และ Deduct) ที่ใช้กับทุกแผนในใบ — ไม่มีอะไรให้เลือก (เช่น ประกันอุบัติเหตุ) ไปใบรวมเลย
-  function openSummarySheet() {
-    const offers = buildOffers(vehicle());
-    const select = (field, label, sub, options, current) => `
-      <label class="mini-select">
-        <span>${label}${sub ? ` <small>${sub}</small>` : ''}</span>
-        <select data-sum-field="${field}">${options.map(([v, t]) => `<option value="${v}" ${String(v) === String(current) ? 'selected' : ''}>${t}</option>`).join('')}</select>${icon('chev')}
-      </label>`;
-    const fields = [];
+  // ---------- ตัวเลือกใบเสนอราคารวม ----------
+  // หน้าต่างเดียวครบทุกอย่างที่มีผลกับใบ: การใช้รถ · ประเภทลูกค้า · ทุน · Deduct · ส่วนลดประวัติดี · วงเงินบุคคลภายนอก · พ.ร.บ. · ข้อมูลลูกค้า
+  // เลือกแล้วมีผลทันที (หน้ารายการแผน/หน้าสรุปใช้ค่าเดียวกัน) — ตัวเลือกที่ไม่เกี่ยวกับรถคันนี้ไม่แสดง
+  function summaryOptionsBody() {
+    const v = vehicle();
+    const offers = buildOffers(v);
+    const plus = offers.filter((o) => o.type === 'plus');
+    const rules = R.plusRules;
+    const seg = (field, items, current) => (name) => `
+      <div class="seg ${items.length === 3 ? 'three' : ''}" role="group" aria-label="${esc(name)}">
+        ${items.map(([val, label, sub]) => {
+          const on = String(val) === String(current);
+          return `<button type="button" class="${on ? 'is-on' : ''}" data-action="sum-opt" data-field="${field}" data-value="${val}" aria-pressed="${on}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
+        }).join('')}
+      </div>`;
+    const select = (field, options, current) => (name) => `
+      <label class="mini-select"><select data-sum-field="${field}" aria-label="${esc(name)}">${options.map(([val, t]) => `<option value="${val}" ${String(val) === String(current) ? 'selected' : ''}>${t}</option>`).join('')}</select>${icon('chev')}</label>`;
+    const opt = (label, sub, control) => `<div class="opt"><p class="opt-label">${label}${sub ? `<small>${sub}</small>` : ''}</p>${control(label)}</div>`;
+    const sec = (title, rows) => (rows.length ? `<section class="opt-sec"><h4>${title}</h4>${rows.join('')}</section>` : '');
+    const plusNote = plus.length && offers.some((o) => o.type !== 'plus') ? 'ใช้กับชั้น 2+ และ 3+' : '';
+
+    const car = [];
+    if (v.kind === 'car' || v.kind === 'moto') {
+      car.push(opt('การใช้รถ', '', seg('usage', [['personal', 'ส่วนบุคคล'], ['commercial', 'เพื่อการพาณิชย์']], state.usage)));
+    }
+    if (v.kind !== 'pa' && custTypeApplicable(v)) {
+      car.push(opt('ประเภทลูกค้า', '', seg('cust', [['new', 'ลูกค้าใหม่ 2569'], ['old', 'ลูกค้าเดิม']], state.custType)));
+    }
+
+    const cover = [];
     ['plus2', 'plus3', 'moto'].forEach((fam) => {
       const own = offers.filter((o) => hasSum(o) && o.family === fam);
       if (!own.length) return;
       const cls = [...new Set(own.map((o) => o.cls))].sort((a, b) => CLS_ORDER[a] - CLS_ORDER[b]).join(' / ');
-      fields.push(select(fam, `ทุนรถชนรถ ชั้น ${cls}`, fam === 'moto' ? '60% ของราคาตลาด' : '', own[0].sums.map((x) => [x, `${money(x)} บาท`]), own[0].sum));
+      cover.push(opt(`ทุนรถชนรถ ชั้น ${cls}`, fam === 'moto' ? '60% ของราคาตลาด' : '', select(fam, own[0].sums.map((x) => [x, `${money(x)} บาท`]), own[0].sum)));
     });
     const d = offers.find((o) => o.type === 'truck' || o.deductChoice);
     if (d) {
-      fields.push(select('deduct', 'ค่าเสียหายส่วนแรก (Deduct)', d.type === 'truck' ? 'ต่อทรัพย์สินบุคคลภายนอก' : offers.some((o) => o.type !== 'plus') ? 'ใช้กับชั้น 2+ และ 3+' : '',
-        [[1, `มี ${money(d.deductAmount)} บาท (เบี้ยถูกกว่า)`], [0, 'ไม่มี']], state.deduct ? 1 : 0));
+      cover.push(opt('ค่าเสียหายส่วนแรก (Deduct)', d.type === 'truck' ? 'ต่อทรัพย์สินบุคคลภายนอก' : plusNote,
+        seg('deduct', [[1, `มี ${money(d.deductAmount)} บาท`, 'เบี้ยถูกกว่า'], [0, 'ไม่มี', 'ไม่ต้องจ่ายส่วนแรก']], state.deduct ? 1 : 0)));
     }
-    if (!fields.length) { startSummary(); return; }
-    openSheet({
-      title: 'เลือกทุนประกัน',
-      body: `
-        <p class="sheet-note">ใช้กับทุกแผนในใบเสนอราคารวม (${offers.length} แผน)</p>
-        <div class="sheet-fields">${fields.join('')}</div>
-        <button class="btn btn-primary btn-block" data-action="summary-go">${icon('table')}ดูใบเสนอราคารวม</button>`,
+
+    const extra = [];
+    if (plus.length) {
+      const maxTiers = Math.max(...plus.map((o) => o.ncd.length));
+      if (plus.every((o) => o.campaign)) {
+        extra.push(`<p class="opt-info">${icon('info')}ส่วนลดไม่มีเคลมรวมอยู่ในเบี้ยแล้ว (แคมเปญลูกค้าใหม่ปี 2569)</p>`);
+      } else if (maxTiers > 1) {
+        const ncdOpts = rules.ncdLabels.slice(0, maxTiers).map((label, years) => {
+          if (!years) return [years, label];
+          const amounts = plus.map((o) => o.ncd[Math.min(years, o.ncd.length - 1)]);
+          return [years, `${label} (${amounts.every((x) => x === amounts[0]) ? `-${money(amounts[0])}` : 'ลดตามแผน'})`];
+        });
+        // เก็บค่าที่ตัดแล้ว ให้ค่าที่เห็นในช่องตรงกับค่าที่ใช้จริง (เลือกซ้ำค่าที่แสดงอยู่จะไม่เกิด change)
+        state.addons.ncd = Math.min(state.addons.ncd, maxTiers - 1);
+        extra.push(opt('ส่วนลดประวัติดี', plusNote || 'ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด', select('ncd', ncdOpts, state.addons.ncd)));
+      }
+      extra.push(opt('วงเงินชีวิต ร่างกาย บุคคลภายนอก (ต่อคน)', plusNote,
+        seg('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, money(u.perPerson), u.amount ? `+${money(u.amount)}` : 'มาตรฐาน']), state.addons.tpbi)));
+    }
+    const cmi = offers.map((o) => cmiAmount(o, v)).find(Boolean);
+    if (cmi) {
+      extra.push(opt('พ.ร.บ.', v.kind === 'moto' ? `รถจักรยานยนต์ ${ccLabel(v.model)}` : `รหัส ${v.code}`,
+        seg('cmi', [[0, 'ไม่รวม พ.ร.บ.'], [1, 'รวม พ.ร.บ.', `+${money(cmi)} บาท`]], state.addons.cmi ? 1 : 0)));
+    }
+
+    const cust = [`
+      <label class="field"><span>ชื่อลูกค้า <small>(ไม่บังคับ)</small></span>
+        <input id="sumCustName" type="text" value="${esc(state.customer.name)}" placeholder="เช่น คุณสมชาย ใจดี" autocomplete="name" maxlength="80"></label>
+      <label class="field"><span>เบอร์โทรศัพท์ <small>(ไม่บังคับ)</small></span>
+        <input id="sumCustPhone" type="tel" inputmode="tel" value="${esc(state.customer.phone)}" placeholder="08x-xxx-xxxx" autocomplete="tel" maxlength="20">
+        <em class="field-error" id="sumPhoneError" hidden>เบอร์โทรไม่ถูกต้อง</em></label>`];
+
+    const enough = offers.length >= 2;
+    return `
+      ${sec(`${icon(vehicleIcon(v))}${esc(v.name)}`, car)}
+      ${sec('ทุนประกัน', cover)}
+      ${sec('ส่วนลดและความคุ้มครองเพิ่ม', extra)}
+      ${sec('ข้อมูลลูกค้าบนใบเสนอราคา', cust)}
+      ${enough ? '' : `<div class="notice">${icon('info')}<p>ตัวเลือกนี้มีแผนเดียว ไม่ต้องเปรียบเทียบ ดูใบเสนอราคาจากหน้ารายการแผนได้เลย</p></div>`}
+      <button class="btn btn-primary btn-block sheet-go" data-action="summary-go" ${enough ? '' : 'disabled'}>${icon('table')}ดูใบเสนอราคารวม (${offers.length} แผน)</button>`;
+  }
+
+  // ตัวเลือกมีผลทันทีที่เลือก — ปิดหน้าต่างด้วยวิธีไหนก็ตาม (ปุ่ม/X/แตะนอกกรอบ/Esc/ย้อนกลับ) วาดหน้าด้านหลังใหม่ให้ตรงกับค่าที่เลือก
+  // (ไม่วาดระหว่างเปิดหน้าต่าง เพื่อไม่ให้แผนที่เลือกไว้หายระหว่างลองสลับการใช้รถ/ประเภทลูกค้าไปมา)
+  function openSummarySheet() {
+    openSheet({ title: 'ตัวเลือกใบเสนอราคารวม', body: summaryOptionsBody(), onClose: render });
+  }
+
+  // เปลี่ยนตัวเลือกในหน้าต่าง → วาดตัวเลือกใหม่ (ทุน/ตัวเลือกบางอย่างขึ้นกับการใช้รถ/ประเภทลูกค้า) โดยคงตำแหน่งเลื่อนและช่องที่โฟกัสอยู่
+  function refreshSummarySheet() {
+    const body = sheetEl.querySelector('.sheet-body');
+    if (!body) return;
+    const a = document.activeElement;
+    const d = a && body.contains(a) ? a.dataset : {};
+    const key = d.sumField ? `[data-sum-field="${d.sumField}"]` : d.field ? `[data-field="${d.field}"][data-value="${d.value}"]` : '';
+    const top = body.scrollTop;
+    body.innerHTML = summaryOptionsBody();
+    body.scrollTop = top;
+    save();
+    const el = key && body.querySelector(key);
+    if (el) el.focus({ preventScroll: true });
+  }
+
+  // แสดงตัวเลือกที่ใช้อยู่ในหน้าใบรวม (แตะเพื่อแก้)
+  function summaryOptionsText(v, offers) {
+    const parts = [];
+    if (v.kind === 'car' || v.kind === 'moto') parts.push(usageTh());
+    if (v.kind !== 'pa' && custTypeApplicable(v)) parts.push(state.custType === 'old' ? 'ลูกค้าเดิม' : 'ลูกค้าใหม่ 2569');
+    ['plus2', 'plus3', 'moto'].forEach((fam) => {
+      const o = offers.find((x) => hasSum(x) && x.family === fam);
+      if (o) parts.push(`ทุน ${fam === 'moto' ? '' : `${o.cls} `}${money(o.sum)}`);
     });
+    const d = offers.find((o) => o.type === 'truck' || o.deductChoice);
+    if (d) parts.push(state.deduct ? `Deduct ${money(d.deductAmount)}` : 'ไม่มี Deduct');
+    const plus = offers.filter((o) => o.type === 'plus');
+    if (plus.length && ncdShown(state.addons.ncd, plus) && !plus.every((o) => o.campaign)) parts.push(`ส่วนลด${R.plusRules.ncdLabels[ncdShown(state.addons.ncd, plus)]}`);
+    if (plus.length && state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson) parts.push(`บุคคลภายนอก ${money(state.addons.tpbi)}/คน`);
+    if (offers.some((o) => cmiAmount(o, v))) parts.push(state.addons.cmi ? 'รวม พ.ร.บ.' : 'ไม่รวม พ.ร.บ.');
+    const name = state.customer.name.trim();
+    parts.push(name ? `เรียน ${name}` : 'ยังไม่ใส่ชื่อลูกค้า');
+    return parts;
   }
 
   function renderSummary() {
@@ -1646,10 +1743,10 @@
     return `
       <div class="sum-chrome">
         ${quoteActions()}
-        <label class="field sum-name">
-          <span>ชื่อลูกค้า <small>(ไม่บังคับ)</small></span>
-          <input id="sumName" type="text" value="${esc(state.customer.name)}" placeholder="เช่น คุณสมชาย ใจดี" autocomplete="name" maxlength="80">
-        </label>
+        <button class="sum-opts" data-action="summary-edit">
+          <span><b>ตัวเลือกที่ใช้</b><small>${summaryOptionsText(v, offers).map((t) => `<span>${esc(t)}</span>`).join(' · ')}</small></span>
+          <em>ปรับ</em>
+        </button>
         <p class="quote-hint">ใบเสนอราคา A4 แนวนอน · รวม ${offers.length} แผน${pages.length > 1 ? ` · ${pages.length} หน้า` : ''} · ถ่างนิ้วหรือหมุนจอเพื่อดูชัดขึ้น</p>
       </div>
       ${pages.map((chunk, i) => `
@@ -1671,24 +1768,22 @@
     const offers = summary ? summaryOffers(v) : pickedOffers(v);
     const name = state.customer.name.trim();
     const lines = [`${shareTitle()} มิตรแท้ประกันภัย`, `เลขที่ ${activeQuote().no}`];
-    if (name || !summary) lines.push(`ลูกค้า: ${name}`);
+    const phone = state.customer.phone.trim();
+    if (name || phone || !summary) lines.push(`ลูกค้า: ${name || '—'}${phone ? ` โทร ${phone}` : ''}`);
     lines.push(v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`, '');
     offers.forEach((o, i) => {
-      const p = pricing(o, v, summary ? BASE_ADDONS : state.addons);
+      const p = pricing(o, v);
       lines.push(`${i + 1}) ${o.type === 'pa' ? `${o.product} ${o.planShort}`.trim() : `${shortName(o)} ${o.product}`}`);
       lines.push(`   ${pickDetail(o)}`);
-      lines.push(summary ? `   เบี้ย ${money(p.total)} บาท/ปี` : `   เบี้ยรวม ${money(p.total)} บาท`);
+      lines.push(`   เบี้ยรวม ${money(p.total)} บาท`);
     });
-    if (summary) {
-      const note = premiumNote(v, offers);
-      if (note) lines.push('', `(${note})`);
-    } else {
-      const extra = [];
-      if (state.addons.ncd && offers.some((o) => o.type === 'plus')) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[state.addons.ncd]}`);
-      if (state.addons.tpbi !== 500000 && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
-      if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
-      if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
-    }
+    const extra = [];
+    if (ncdShown(state.addons.ncd, offers) && offers.some((o) => o.type === 'plus' && !o.campaign)) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[ncdShown(state.addons.ncd, offers)]}`);
+    if (state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
+    if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
+    if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
+    const note = summary ? premiumNote(v, offers) : '';
+    if (note) lines.push('', `(${note})`);
     lines.push('', `${AGENT.office} ${AGENT.name}`, `โทร ${AGENT.phone}`);
     return lines.join('\n');
   }
@@ -1734,18 +1829,22 @@
       : '<li class="sheet-empty">ไม่พบรายการ</li>';
   }
 
+  // คืนงานที่ต้องทำหลังปิด (cfg.onClose) ให้ผู้เรียกสั่งหลัง history ย้อนเสร็จ
   function hideSheet() {
+    const done = sheet && sheet.onClose;
     sheet = null;
     sheetEl.hidden = true;
     sheetEl.innerHTML = '';
     document.body.classList.remove('no-scroll');
+    return done || null;
   }
 
+  // after (ถ้ามี) ทำแทน onClose — เช่น เปิดใบรวม ซึ่งวาดหน้าใหม่อยู่แล้ว
   function closeSheet(after) {
     if (!sheet) return;
-    hideSheet();
+    const done = hideSheet();
     skipPop = true;
-    afterPop = after || null;
+    afterPop = after || done;
     history.back();
   }
 
@@ -1976,9 +2075,9 @@
     const pages = [...document.querySelectorAll('#app .qp')];
     if (!pages.length) return;
     const key = pages.map((p) => p.outerHTML).join('');
-    // ล็อกช่องชื่อลูกค้าระหว่างสร้างรูป ไม่ให้แต่ละหน้าได้ชื่อไม่ตรงกัน
-    const nameInput = $('#sumName');
-    if (nameInput) nameInput.readOnly = true;
+    // ระหว่างสร้างรูปห้ามปรับตัวเลือก (หน้าจะถูกวาดใหม่กลางคัน)
+    const optsBtn = $('[data-action="summary-edit"]');
+    if (optsBtn) optsBtn.disabled = true;
     btn.disabled = true;
     try {
       let files = imageCache && imageCache.key === key ? imageCache.files : null;
@@ -2016,7 +2115,7 @@
       if (e && e.name !== 'AbortError') toast('สร้างรูปภาพไม่สำเร็จ ลองใช้ปุ่ม PDF');
     } finally {
       btn.disabled = false;
-      if (nameInput) nameInput.readOnly = false;
+      if (optsBtn) optsBtn.disabled = false;
     }
   }
 
@@ -2158,14 +2257,29 @@
       case 'unpick': state.picks.splice(Number(val), 1); render(); break;
       case 'to-checkout': go('checkout'); break;
       case 'to-summary': openSummarySheet(); break;
-      case 'summary-go':
-        sheetEl.querySelectorAll('select[data-sum-field]').forEach((sel) => {
-          const f = sel.dataset.sumField;
-          if (f === 'deduct') state.deduct = sel.value === '1';
-          else state.sums[f] = Number(sel.value);
-        });
-        closeSheet(startSummary);
+      case 'summary-edit': openSummarySheet(); break;
+      case 'sum-opt': {
+        const f = el.dataset.field;
+        if (f === 'usage') state.usage = val;
+        else if (f === 'cust') state.custType = val;
+        else if (f === 'deduct') state.deduct = val === '1';
+        else if (f === 'tpbi') state.addons.tpbi = Number(val);
+        else if (f === 'cmi') state.addons.cmi = val === '1';
+        refreshSummarySheet();
         break;
+      }
+      case 'summary-go': {
+        const phone = state.customer.phone.trim();
+        const digits = phone.replace(/\D/g, '');
+        if (phone && (digits.length < 9 || digits.length > 10)) {
+          $('#sumPhoneError').hidden = false;
+          $('#sumCustPhone').focus();
+          break;
+        }
+        // เปิดจากหน้าใบรวม → วาดใบเดิมใหม่ (เลขที่เดิม, ผ่าน onClose) · เปิดจากหน้ารายการแผน → ออกใบใหม่
+        closeSheet(state.view === 'summary' ? null : startSummary);
+        break;
+      }
       case 'ncd': state.addons.ncd = Number(val); render(); break;
       case 'tpbi': state.addons.tpbi = Number(val); render(); break;
       case 'cmi': state.addons.cmi = !state.addons.cmi; render(); break;
@@ -2201,6 +2315,11 @@
       updatePick(Number(el.dataset.index), { sum: Number(el.value) });
     } else if (action === 'pick-deduct') {
       updatePick(Number(el.dataset.index), { deduct: el.value === '1' });
+    } else if (el.dataset && el.dataset.sumField) {
+      const f = el.dataset.sumField;
+      if (f === 'ncd') state.addons.ncd = Number(el.value);
+      else state.sums[f] = Number(el.value);
+      refreshSummarySheet();
     }
   });
 
@@ -2208,13 +2327,8 @@
     const el = e.target;
     if (el.id === 'sheetSearch' && sheet) { sheet.query = el.value; drawSheetList(); $('#sheetList').scrollTop = 0; return; }
     if (el.id === 'custName') { state.customer.name = el.value; $('#nameError').hidden = true; save(); return; }
-    if (el.id === 'sumName') {
-      state.customer.name = el.value;
-      const shown = el.value.trim() || '—';
-      document.querySelectorAll('[data-cust-name]').forEach((n) => { n.textContent = shown; });
-      save();
-      return;
-    }
+    if (el.id === 'sumCustName') { state.customer.name = el.value; save(); return; }
+    if (el.id === 'sumCustPhone') { state.customer.phone = el.value; $('#sumPhoneError').hidden = true; save(); return; }
     if (el.id === 'custPhone') { state.customer.phone = el.value; $('#phoneError').hidden = true; save(); return; }
     if (el.id === 'customModelName') { state.customModelName = el.value; save(); return; }
     if (el.id === 'yearInput') yearTyped(el);
@@ -2247,7 +2361,11 @@
       if (after) after();
       return;
     }
-    if (sheet) { hideSheet(); return; }
+    if (sheet) {
+      const done = hideSheet();
+      if (done) done();
+      return;
+    }
     state.view = (e.state && e.state.view) || 'search';
     render();
     window.scrollTo(0, 0);
