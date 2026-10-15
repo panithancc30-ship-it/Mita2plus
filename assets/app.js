@@ -1439,7 +1439,7 @@
       else body.push(row('เบี้ยประกันภัยต่อคนต่อปี', prices.map((p, i) => `<td>${money(p.premium)}<br><small>${offers[i].taxNote}</small></td>`)));
     } else body.push(row('เบี้ยประกันภัย<small>รวมภาษีมูลค่าเพิ่มและอากรแสตมป์</small>', prices.map((p) => `<td>${money(p.premium)}</td>`)));
     if (prices.some((p) => p.ncd)) {
-      const label = R.plusRules.ncdLabels[addons.ncd];
+      const label = R.plusRules.ncdLabels[ncdShown(addons.ncd, offers)];
       body.push(row(`ส่วนลดประวัติดี<small>${esc(label)}</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td class="minus">${signed(prices[i].ncd)}</td>` : dash))));
     }
     if (prices.some((p) => p.tpbi)) {
@@ -1600,6 +1600,12 @@
     });
   }
 
+  // ขั้นส่วนลดประวัติดีที่ใช้จริง — บางแผนมีขั้นน้อยกว่า (เช่น รถยุโรป/ตู้เย็นมีแค่ 1 ปี) pricing() ตัดตามแผน ป้ายจึงต้องตัดตามด้วย
+  function ncdShown(ncd, offers) {
+    const plus = offers.filter((o) => o.type === 'plus');
+    return plus.length ? Math.min(ncd, Math.max(...plus.map((o) => o.ncd.length)) - 1) : ncd;
+  }
+
   function startSummary() {
     state.sumQuote = newQuoteMeta();
     go('summary');
@@ -1613,16 +1619,16 @@
     const offers = buildOffers(v);
     const plus = offers.filter((o) => o.type === 'plus');
     const rules = R.plusRules;
-    const seg = (field, items, current) => `
-      <div class="seg ${items.length === 3 ? 'three' : ''}" role="group">
+    const seg = (field, items, current) => (name) => `
+      <div class="seg ${items.length === 3 ? 'three' : ''}" role="group" aria-label="${esc(name)}">
         ${items.map(([val, label, sub]) => {
           const on = String(val) === String(current);
           return `<button type="button" class="${on ? 'is-on' : ''}" data-action="sum-opt" data-field="${field}" data-value="${val}" aria-pressed="${on}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
         }).join('')}
       </div>`;
-    const select = (field, options, current) => `
-      <label class="mini-select"><select data-sum-field="${field}">${options.map(([val, t]) => `<option value="${val}" ${String(val) === String(current) ? 'selected' : ''}>${t}</option>`).join('')}</select>${icon('chev')}</label>`;
-    const opt = (label, sub, control) => `<div class="opt"><p class="opt-label">${label}${sub ? `<small>${sub}</small>` : ''}</p>${control}</div>`;
+    const select = (field, options, current) => (name) => `
+      <label class="mini-select"><select data-sum-field="${field}" aria-label="${esc(name)}">${options.map(([val, t]) => `<option value="${val}" ${String(val) === String(current) ? 'selected' : ''}>${t}</option>`).join('')}</select>${icon('chev')}</label>`;
+    const opt = (label, sub, control) => `<div class="opt"><p class="opt-label">${label}${sub ? `<small>${sub}</small>` : ''}</p>${control(label)}</div>`;
     const sec = (title, rows) => (rows.length ? `<section class="opt-sec"><h4>${title}</h4>${rows.join('')}</section>` : '');
     const plusNote = plus.length && offers.some((o) => o.type !== 'plus') ? 'ใช้กับชั้น 2+ และ 3+' : '';
 
@@ -1658,7 +1664,9 @@
           const amounts = plus.map((o) => o.ncd[Math.min(years, o.ncd.length - 1)]);
           return [years, `${label} (${amounts.every((x) => x === amounts[0]) ? `-${money(amounts[0])}` : 'ลดตามแผน'})`];
         });
-        extra.push(opt('ส่วนลดประวัติดี', plusNote || 'ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด', select('ncd', ncdOpts, Math.min(state.addons.ncd, maxTiers - 1))));
+        // เก็บค่าที่ตัดแล้ว ให้ค่าที่เห็นในช่องตรงกับค่าที่ใช้จริง (เลือกซ้ำค่าที่แสดงอยู่จะไม่เกิด change)
+        state.addons.ncd = Math.min(state.addons.ncd, maxTiers - 1);
+        extra.push(opt('ส่วนลดประวัติดี', plusNote || 'ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด', select('ncd', ncdOpts, state.addons.ncd)));
       }
       extra.push(opt('วงเงินชีวิต ร่างกาย บุคคลภายนอก (ต่อคน)', plusNote,
         seg('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, money(u.perPerson), u.amount ? `+${money(u.amount)}` : 'มาตรฐาน']), state.addons.tpbi)));
@@ -1683,27 +1691,35 @@
       ${sec('ส่วนลดและความคุ้มครองเพิ่ม', extra)}
       ${sec('ข้อมูลลูกค้าบนใบเสนอราคา', cust)}
       ${enough ? '' : `<div class="notice">${icon('info')}<p>ตัวเลือกนี้มีแผนเดียว ไม่ต้องเปรียบเทียบ ดูใบเสนอราคาจากหน้ารายการแผนได้เลย</p></div>`}
-      <button class="btn btn-primary btn-block sheet-go" data-action="summary-go" ${enough ? '' : 'disabled'}>${icon('table')}${state.view === 'summary' ? 'ใช้ตัวเลือกนี้' : `ดูใบเสนอราคารวม (${offers.length} แผน)`}</button>`;
+      <button class="btn btn-primary btn-block sheet-go" data-action="summary-go" ${enough ? '' : 'disabled'}>${icon('table')}ดูใบเสนอราคารวม (${offers.length} แผน)</button>`;
   }
 
+  // ตัวเลือกมีผลทันทีที่เลือก — ปิดหน้าต่างด้วยวิธีไหนก็ตาม (ปุ่ม/X/แตะนอกกรอบ/Esc/ย้อนกลับ) วาดหน้าด้านหลังใหม่ให้ตรงกับค่าที่เลือก
+  // (ไม่วาดระหว่างเปิดหน้าต่าง เพื่อไม่ให้แผนที่เลือกไว้หายระหว่างลองสลับการใช้รถ/ประเภทลูกค้าไปมา)
   function openSummarySheet() {
-    openSheet({ title: 'ตัวเลือกใบเสนอราคารวม', body: summaryOptionsBody() });
+    openSheet({ title: 'ตัวเลือกใบเสนอราคารวม', body: summaryOptionsBody(), onClose: render });
   }
 
-  // เปลี่ยนตัวเลือกในหน้าต่าง: อัปเดตหน้ารายการแผนด้านหลัง (ถ้าอยู่หน้านั้น) แล้ววาดตัวเลือกใหม่ (ทุน/ตัวเลือกบางอย่างขึ้นกับการใช้รถ/ประเภทลูกค้า)
+  // เปลี่ยนตัวเลือกในหน้าต่าง → วาดตัวเลือกใหม่ (ทุน/ตัวเลือกบางอย่างขึ้นกับการใช้รถ/ประเภทลูกค้า) โดยคงตำแหน่งเลื่อนและช่องที่โฟกัสอยู่
   function refreshSummarySheet() {
-    save();
-    if (state.view === 'plans') render();
     const body = sheetEl.querySelector('.sheet-body');
     if (!body) return;
+    const a = document.activeElement;
+    const d = a && body.contains(a) ? a.dataset : {};
+    const key = d.sumField ? `[data-sum-field="${d.sumField}"]` : d.field ? `[data-field="${d.field}"][data-value="${d.value}"]` : '';
     const top = body.scrollTop;
     body.innerHTML = summaryOptionsBody();
     body.scrollTop = top;
+    save();
+    const el = key && body.querySelector(key);
+    if (el) el.focus({ preventScroll: true });
   }
 
   // แสดงตัวเลือกที่ใช้อยู่ในหน้าใบรวม (แตะเพื่อแก้)
   function summaryOptionsText(v, offers) {
     const parts = [];
+    if (v.kind === 'car' || v.kind === 'moto') parts.push(usageTh());
+    if (v.kind !== 'pa' && custTypeApplicable(v)) parts.push(state.custType === 'old' ? 'ลูกค้าเดิม' : 'ลูกค้าใหม่ 2569');
     ['plus2', 'plus3', 'moto'].forEach((fam) => {
       const o = offers.find((x) => hasSum(x) && x.family === fam);
       if (o) parts.push(`ทุน ${fam === 'moto' ? '' : `${o.cls} `}${money(o.sum)}`);
@@ -1711,7 +1727,7 @@
     const d = offers.find((o) => o.type === 'truck' || o.deductChoice);
     if (d) parts.push(state.deduct ? `Deduct ${money(d.deductAmount)}` : 'ไม่มี Deduct');
     const plus = offers.filter((o) => o.type === 'plus');
-    if (plus.length && state.addons.ncd && !plus.every((o) => o.campaign)) parts.push(`ส่วนลด${R.plusRules.ncdLabels[Math.min(state.addons.ncd, Math.max(...plus.map((o) => o.ncd.length)) - 1)]}`);
+    if (plus.length && ncdShown(state.addons.ncd, plus) && !plus.every((o) => o.campaign)) parts.push(`ส่วนลด${R.plusRules.ncdLabels[ncdShown(state.addons.ncd, plus)]}`);
     if (plus.length && state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson) parts.push(`บุคคลภายนอก ${money(state.addons.tpbi)}/คน`);
     if (offers.some((o) => cmiAmount(o, v))) parts.push(state.addons.cmi ? 'รวม พ.ร.บ.' : 'ไม่รวม พ.ร.บ.');
     const name = state.customer.name.trim();
@@ -1753,7 +1769,7 @@
     const name = state.customer.name.trim();
     const lines = [`${shareTitle()} มิตรแท้ประกันภัย`, `เลขที่ ${activeQuote().no}`];
     const phone = state.customer.phone.trim();
-    if (name || !summary) lines.push(`ลูกค้า: ${name}${phone ? ` โทร ${phone}` : ''}`);
+    if (name || phone || !summary) lines.push(`ลูกค้า: ${name || '—'}${phone ? ` โทร ${phone}` : ''}`);
     lines.push(v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`, '');
     offers.forEach((o, i) => {
       const p = pricing(o, v);
@@ -1762,7 +1778,7 @@
       lines.push(`   เบี้ยรวม ${money(p.total)} บาท`);
     });
     const extra = [];
-    if (state.addons.ncd && offers.some((o) => o.type === 'plus' && !o.campaign)) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[state.addons.ncd]}`);
+    if (ncdShown(state.addons.ncd, offers) && offers.some((o) => o.type === 'plus' && !o.campaign)) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[ncdShown(state.addons.ncd, offers)]}`);
     if (state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
     if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
     if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
@@ -1813,18 +1829,22 @@
       : '<li class="sheet-empty">ไม่พบรายการ</li>';
   }
 
+  // คืนงานที่ต้องทำหลังปิด (cfg.onClose) ให้ผู้เรียกสั่งหลัง history ย้อนเสร็จ
   function hideSheet() {
+    const done = sheet && sheet.onClose;
     sheet = null;
     sheetEl.hidden = true;
     sheetEl.innerHTML = '';
     document.body.classList.remove('no-scroll');
+    return done || null;
   }
 
+  // after (ถ้ามี) ทำแทน onClose — เช่น เปิดใบรวม ซึ่งวาดหน้าใหม่อยู่แล้ว
   function closeSheet(after) {
     if (!sheet) return;
-    hideSheet();
+    const done = hideSheet();
     skipPop = true;
-    afterPop = after || null;
+    afterPop = after || done;
     history.back();
   }
 
@@ -2256,8 +2276,8 @@
           $('#sumCustPhone').focus();
           break;
         }
-        // เปิดจากหน้าใบรวม → วาดใบเดิมใหม่ (เลขที่เดิม) · เปิดจากหน้ารายการแผน → ออกใบใหม่
-        closeSheet(state.view === 'summary' ? render : startSummary);
+        // เปิดจากหน้าใบรวม → วาดใบเดิมใหม่ (เลขที่เดิม, ผ่าน onClose) · เปิดจากหน้ารายการแผน → ออกใบใหม่
+        closeSheet(state.view === 'summary' ? null : startSummary);
         break;
       }
       case 'ncd': state.addons.ncd = Number(val); render(); break;
@@ -2341,7 +2361,11 @@
       if (after) after();
       return;
     }
-    if (sheet) { hideSheet(); return; }
+    if (sheet) {
+      const done = hideSheet();
+      if (done) done();
+      return;
+    }
     state.view = (e.state && e.state.view) || 'search';
     render();
     window.scrollTo(0, 0);
