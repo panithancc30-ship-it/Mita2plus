@@ -4,6 +4,7 @@
   const R = window.MT_RATES;
   const AGENT = window.MT_AGENT;
   const PA = window.MT_PA;
+  const FIRE = window.MT_FIRE;
   const BRANDS = window.MT_BRANDS.map((b) => ({
     ...b,
     models: b.models.map(([name, kind, from, to]) => ({ name, kind, from, to })),
@@ -35,11 +36,12 @@
     moto: { label: 'รถจักรยานยนต์', short: 'มอเตอร์ไซค์' },
   };
   const CAR_KINDS = ['car', 'pickup', 'van', 'truck6', 'truck10'];
-  // แท็บประเภทประกันในหน้าแรก — ประกันอื่น (เช่น อัคคีภัย) เพิ่มต่อท้ายที่นี่
+  // แท็บประเภทประกันในหน้าแรก — ประกันอื่นเพิ่มต่อท้ายที่นี่
   const VTYPES = {
     car: { label: 'รถยนต์', icon: 'car', noun: 'รถยนต์', brandHint: 'ค้นหายี่ห้อ เช่น Toyota, BYD', modelHint: 'เช่น Corolla Altis' },
     moto: { label: 'มอเตอร์ไซค์', icon: 'moto', noun: 'มอเตอร์ไซค์', brandHint: 'ค้นหายี่ห้อ เช่น Honda, Yamaha', modelHint: 'เช่น Wave 125i' },
     pa: { label: 'อุบัติเหตุ', icon: 'person', noun: 'อุบัติเหตุส่วนบุคคล' },
+    fire: { label: 'อัคคีภัย', icon: 'home', noun: 'อัคคีภัยที่อยู่อาศัย' },
   };
   // รุ่นมอเตอร์ไซค์ที่ไม่มีในรายการ: เลือกช่วงขนาดเครื่องยนต์ เก็บเป็น cc สูงสุดของช่วง
   const CC_CHOICES = [[110, 'ไม่เกิน 110 cc'], [125, '111 – 125 cc'], [150, '126 – 150 cc'], [200, '151 – 200 cc'], [250, 'เกิน 200 cc']];
@@ -53,8 +55,8 @@
   };
   const REG_LABEL = { reg4: 'กทม. สมุทรปราการ อุบลฯ นครสวรรค์', regOther: 'จังหวัดอื่นๆ' };
   const TIER_TH = { PLATINUM: 'แพลทินัม', GOLD: 'โกลด์', SILVER: 'ซิลเวอร์' };
-  const CLS_CLASS = { '2+': 'c2p', '3+': 'c3p', 3: 'c3', PLV: 'c2p', PA700: 'c3p', BONE: 'c3' };
-  const CLS_ORDER = { '2+': 0, '3+': 1, 3: 2, PLV: 0, PA700: 1, BONE: 2 };
+  const CLS_CLASS = { '2+': 'c2p', '3+': 'c3p', 3: 'c3', PLV: 'c2p', PA700: 'c3p', BONE: 'c3', FIRE1: 'c2p', FIRE2: 'c3p' };
+  const CLS_ORDER = { '2+': 0, '3+': 1, 3: 2, PLV: 0, PA700: 1, BONE: 2, FIRE1: 0, FIRE2: 1 };
   const TIER_ORDER = { PLATINUM: 0, GOLD: 1, SILVER: 2 };
 
   // ---------- helpers ----------
@@ -97,6 +99,7 @@
     shield: '<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/><path d="M8.7 12l2.3 2.3 4.3-4.6"/>',
     refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/>',
     person: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c0-4 3.1-7 7-7s7 3 7 7"/>',
+    home: '<path d="M3.5 11.5L12 4l8.5 7.5"/><path d="M6 9.8V20h12V9.8"/><path d="M10 20v-5.5h4V20"/>',
     table: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 10h17M9 10v9M14.5 10v9"/>',
     phone: '<path d="M5.5 3.5h3.2l1.8 4.6-2.2 1.4a11.5 11.5 0 006.2 6.2l1.4-2.2 4.6 1.8v3.2a2 2 0 01-2.1 2A16.5 16.5 0 013.5 5.6a2 2 0 012-2.1z"/>',
   };
@@ -117,6 +120,8 @@
     paAge: null, // ประกันอุบัติเหตุ: id ช่วงอายุ (PA.ages)
     paOcc: null, // ประกันอุบัติเหตุ: id ชั้นอาชีพ ('1'–'4' | 'student')
     paOccName: '', // ชื่ออาชีพที่เลือกจากช่องค้นหา (ว่าง = เลือกจากปุ่มชั้น)
+    fireCls: null, // ประกันอัคคีภัย: id ชั้นสิ่งปลูกสร้าง (FIRE.classes)
+    fireSum: null, // ประกันอัคคีภัย: ทุนประกันภัย (ต้องมีใน FIRE.rates)
     year: null,
     body: null, // ขั้นที่ 4: ลักษณะรถกระบะ / อุปกรณ์รถบรรทุก / จังหวัดที่จดทะเบียนมอเตอร์ไซค์
     usage: 'personal',
@@ -145,6 +150,9 @@
 
   const isMotoTab = () => state.vtype === 'moto';
   const isPaTab = () => state.vtype === 'pa';
+  const isFireTab = () => state.vtype === 'fire';
+  // ประกันที่ไม่ใช่รถ (ไม่มียี่ห้อ/ปีรถ/พ.ร.บ.)
+  const nonMotor = (v) => v.kind === 'pa' || v.kind === 'fire';
   const brandList = () => (isMotoTab() ? MOTO_BRANDS : BRANDS);
 
   function getBrand() {
@@ -162,18 +170,22 @@
   }
 
   const ccLabel = (m) => (m.custom ? (CC_CHOICES.find(([cc]) => cc === m.cc) || [])[1] : `${m.cc} cc`);
-  const vehicleIcon = (v) => (v.kind === 'pa' ? 'person' : v.kind === 'moto' ? 'moto' : v.kind.startsWith('truck') ? 'truck' : 'car');
+  const vehicleIcon = (v) => (v.kind === 'fire' ? 'home' : v.kind === 'pa' ? 'person' : v.kind === 'moto' ? 'moto' : v.kind.startsWith('truck') ? 'truck' : 'car');
   const usageTh = () => (state.usage === 'commercial' ? 'เพื่อการพาณิชย์' : 'ส่วนบุคคล');
 
   const needsBody = (kind) => kind === 'pickup' || kind === 'truck6' || kind === 'truck10' || kind === 'moto';
 
   function isComplete() {
     if (isPaTab()) return PA.ages.some((a) => a.id === state.paAge) && PA.occs.some((o) => o.id === state.paOcc);
+    if (isFireTab()) return FIRE.classes.some((c) => c.id === state.fireCls) && FIRE.rates.some(([sum]) => sum === state.fireSum);
     const m = getModel();
     return !!(getBrand() && m && m.kind && state.year && (!needsBody(m.kind) || state.body));
   }
 
-  const carSig = () => JSON.stringify([state.vtype, state.brandId, state.customBrand, state.modelName, state.customModel, state.customKind, state.customCc, state.year, state.body, state.paAge, state.paOcc, state.paOccName]);
+  // ข้อมูลที่ใช้คิดแผน เฉพาะของแท็บที่เปิดอยู่ (แก้ข้อมูลแท็บอื่นแล้วแผนที่เลือกไว้ไม่หาย)
+  const carSig = () => JSON.stringify(isPaTab() ? [state.vtype, state.paAge, state.paOcc, state.paOccName]
+    : isFireTab() ? [state.vtype, state.fireCls, state.fireSum]
+    : [state.vtype, state.brandId, state.customBrand, state.modelName, state.customModel, state.customKind, state.customCc, state.year, state.body]);
 
   // ประกันอุบัติเหตุ: "ผู้เอาประกัน" ใช้แทนรถในทุกหน้า (kind: 'pa')
   function paSubject() {
@@ -196,8 +208,25 @@
     };
   }
 
+  // ประกันอัคคีภัย: "ทรัพย์สินที่เอาประกัน" ใช้แทนรถในทุกหน้า (kind: 'fire')
+  const fireClass = (id) => FIRE.classes.find((c) => c.id === id);
+  // เบี้ยของทุนนี้ตามชั้นสิ่งปลูกสร้าง → { net: เบี้ยสุทธิ, gross: เบี้ยรวม }
+  const firePremium = (row, c) => ({ net: row[c.col], gross: row[c.col + 1] });
+
+  function fireSubject() {
+    const c = fireClass(state.fireCls);
+    return {
+      kind: 'fire',
+      cls: c,
+      sum: state.fireSum,
+      name: `${c.label} · ทุน ${money(state.fireSum)} บาท`,
+      body: null,
+    };
+  }
+
   function vehicle() {
     if (isPaTab()) return paSubject();
+    if (isFireTab()) return fireSubject();
     const brand = getBrand();
     const model = getModel();
     const kind = model.kind;
@@ -341,9 +370,39 @@
     return out;
   }
 
+  // ประกันอัคคีภัย: ทุนที่เลือก + ทุนใกล้เคียงข้างละ FIRE.compare ระดับให้เปรียบเทียบ (ชิดหัว/ท้ายตารางเลื่อนช่วงให้ครบจำนวน)
+  function fireOffers(v) {
+    const rows = FIRE.rates;
+    const n = FIRE.compare * 2 + 1;
+    const i = rows.findIndex(([sum]) => sum === v.sum);
+    const from = Math.max(0, Math.min(i - FIRE.compare, rows.length - n));
+    return rows.slice(from, from + n).map((row) => {
+      const { net, gross } = firePremium(row, v.cls);
+      return {
+        key: `fire.${row[0]}`,
+        type: 'fire',
+        cls: `FIRE${v.cls.id}`,
+        badge: v.cls.label,
+        clsShort: v.cls.short,
+        tier: null,
+        product: `${FIRE.name} (${FIRE.code})`,
+        planTh: `ทุนประกันภัย ${money(row[0])} บาท`,
+        planShort: `ทุน ${money(row[0])}`,
+        head: `ทุน ${money(row[0])}`, // หัวคอลัมน์ในใบเสนอราคา (สั้นให้ 4 คอลัมน์พอดี A4)
+        headSub: `${FIRE.name} ${FIRE.code}`,
+        sum: row[0],
+        net,
+        price: gross,
+        chosen: row[0] === v.sum,
+        cov: {},
+      };
+    });
+  }
+
   // opts.sums / opts.deduct ใช้คำนวณแผนที่เลือกไว้แล้ว ถ้าไม่ส่งมาจะใช้ค่าที่แสดงอยู่ในหน้ารายการแผน
   function buildOffers(v, opts) {
     if (v.kind === 'pa') return paOffers(v).sort((a, b) => a.price - b.price);
+    if (v.kind === 'fire') return fireOffers(v);
     const sums = (opts && opts.sums) || state.sums;
     const deduct = opts && 'deduct' in opts ? opts.deduct : state.deduct;
     if (v.kind === 'moto') return motoOffers(v, sums).sort((a, b) => a.price - b.price);
@@ -426,7 +485,7 @@
   const pickFromOffer = (o) => ({
     key: o.key,
     sum: hasSum(o) ? o.sum : null,
-    deduct: o.type === 'tawikoon' || o.type === 'moto' || o.type === 'pa' ? null : o.deductible > 0,
+    deduct: o.type === 'tawikoon' || o.type === 'moto' || o.type === 'pa' || o.type === 'fire' ? null : o.deductible > 0,
   });
   const pickId = (p) => `${p.key}|${p.sum || ''}|${p.deduct === null ? '' : p.deduct ? 1 : 0}`;
 
@@ -454,16 +513,18 @@
 
   const isPicked = (o) => state.picks.some((p) => pickId(p) === pickId(pickFromOffer(o)));
 
-  // ป้ายชั้น/สินค้าบนการ์ดแผน (ประกันรถ = "ชั้น 2+" ฯลฯ, ประกันอุบัติเหตุ = ชื่อสินค้า)
-  const clsBadge = (o) => `<span class="cls ${CLS_CLASS[o.cls]}">${o.type === 'pa' ? esc(o.badge) : `ชั้น ${o.cls}`}</span>`;
+  // ป้ายชั้น/สินค้าบนการ์ดแผน (ประกันรถ = "ชั้น 2+" ฯลฯ, ประกันอุบัติเหตุ = ชื่อสินค้า, อัคคีภัย = ประเภทบ้าน)
+  const clsBadge = (o) => `<span class="cls ${CLS_CLASS[o.cls]}">${o.type === 'pa' || o.type === 'fire' ? esc(o.badge) : `ชั้น ${o.cls}`}</span>`;
 
   const shortName = (o) => {
+    if (o.type === 'fire') return o.planShort;
     if (o.type === 'pa') return `${o.badge} ${o.planShort}`.trim();
     if ((o.type === 'plus' && !o.tier) || o.type === 'moto') return `ชั้น ${o.cls}`;
     return `ชั้น ${o.cls} ${o.tier || (o.type === 'truck' ? 'รถบรรทุก' : 'ทวีคูณ')}`;
   };
 
   function pickDetail(o) {
+    if (o.type === 'fire') return `${o.badge} · สิ่งปลูกสร้าง${o.clsShort}`;
     if (o.type === 'pa') {
       const c = o.cov;
       return [`เสียชีวิต ${money(c.death)}`, c.bone ? `กระดูกแตกหัก ${money(c.bone)}` : c.med ? `ค่ารักษา ${money(c.med)}` : null].filter(Boolean).join(' · ');
@@ -508,6 +569,24 @@
     { id: 'funeral', label: 'ค่าปลงศพ / จัดการงานศพ' },
   ];
 
+  // ประกันอัคคีภัย: ความคุ้มครองตามโบรชัวร์ (เหมือนกันทุกทุน ต่างกันที่วงเงินตามทุน)
+  const FIRE_ROWS = [
+    { id: 'fire', label: 'ไฟไหม้ ฟ้าผ่า ภัยระเบิด', sub: 'รวมความเสียหายต่อเครื่องใช้ไฟฟ้าจากฟ้าผ่า' },
+    { id: 'other', label: 'ภัยจากยานพาหนะ ภัยจากอากาศยาน ภัยเนื่องจากน้ำ', sub: 'ภัยเนื่องจากน้ำไม่รวมน้ำท่วม' },
+    { id: 'nat', label: 'ภัยธรรมชาติ', sub: 'ลมพายุ น้ำท่วม แผ่นดินไหว ภูเขาไฟระเบิด คลื่นใต้น้ำ/สึนามิ ลูกเห็บ' },
+    { id: 'rent', label: 'ค่าเช่าที่อยู่อาศัยชั่วคราว', sub: 'ขยายความคุ้มครอง' },
+  ];
+
+  function fireCoverageValue(id, o) {
+    switch (id) {
+      case 'fire':
+      case 'other': return `ตามทุน ${money(o.sum)}`;
+      case 'nat': return `รวมไม่เกิน ${money(FIRE.natCap)} /ปี<br><small>ชดใช้ตามความเสียหายจริง</small>`;
+      case 'rent': return 'ตามที่ระบุในกรมธรรม์';
+      default: return null;
+    }
+  }
+
   // undefined = สินค้านี้ไม่มีผลประโยชน์ข้อนี้ · null = มี แต่แผนนี้ไม่คุ้มครอง
   function paCoverageValue(id, o) {
     const c = o.cov;
@@ -530,6 +609,7 @@
   // ค่าความคุ้มครองของแผน (HTML) — null = ไม่คุ้มครอง
   function coverageValue(id, o, v, tpbiPerson) {
     if (o.type === 'pa') return paCoverageValue(id, o);
+    if (o.type === 'fire') return fireCoverageValue(id, o);
     const c = o.cov;
     const seats = seatsFor(o, v);
     const seatTxt = seats ? `<br><small>ไม่เกิน ${seats} ที่นั่ง</small>` : '';
@@ -555,6 +635,7 @@
   }
 
   function rowsFor(offers) {
+    if (offers.some((o) => o.type === 'fire')) return FIRE_ROWS;
     if (offers.some((o) => o.type === 'pa')) return PA_ROWS.filter((r) => offers.some((o) => o.cov[r.id] !== undefined));
     return COVERAGE_ROWS.filter((r) => {
       if (r.show && !r.show(offers)) return false;
@@ -636,7 +717,7 @@
   }
 
   function cmiAmount(o, v) {
-    if (v.kind === 'pa') return 0;
+    if (nonMotor(v)) return 0;
     if (v.kind === 'moto') return R.moto.compulsory.find(([maxCc]) => v.model.cc <= maxCc)[1];
     return o.type === 'truck' ? 0 : R.compulsory[v.code] || 0;
   }
@@ -692,6 +773,7 @@
 
   function quoteConditions(v, offers, addons = state.addons) {
     if (v.kind === 'pa') return paConditions(v, offers);
+    if (v.kind === 'fire') return [...FIRE.conditions, RESERVE_NOTE];
     if (v.kind === 'moto') return motoConditions(v, offers);
     const plusOffers = offers.filter((o) => o.type === 'plus');
     const truck = offers.some((o) => o.type === 'truck');
@@ -767,7 +849,18 @@
   pageStyle.id = 'pageSize';
   document.head.appendChild(pageStyle);
 
+  // เริ่มเลือกแผนใหม่ตามข้อมูลปัจจุบัน (อัคคีภัย: เลือกทุนที่ระบุไว้ให้เลย กดขอใบเสนอราคาได้ทันที)
+  function resetPicks() {
+    state.picks = [];
+    state.picksSig = carSig();
+    state.filter = 'all';
+    if (isFireTab()) state.picks = buildOffers(vehicle()).filter((o) => o.chosen).map(pickFromOffer);
+  }
+
   function render() {
+    // ประกันอุบัติเหตุ/อัคคีภัย: รหัสแผนซ้ำกันข้ามอายุ/ชั้นอาชีพ/ชั้นสิ่งปลูกสร้าง จึงเริ่มเลือกใหม่เมื่อข้อมูลเปลี่ยน
+    // (เช่น กดย้อนกลับ แก้ แล้วกดไปข้างหน้า หรือเปิดแอพเวอร์ชันใหม่ทับหน้าเดิม) — ทำก่อน canShow และจำข้อมูลชุดใหม่ไว้
+    if (state.view !== 'search' && (isPaTab() || isFireTab()) && isComplete() && state.picksSig !== carSig()) resetPicks();
     let view = state.view;
     while (!canShow(view)) view = PARENT[view] || 'search';
     if (view !== state.view) {
@@ -775,8 +868,6 @@
       history.replaceState({ view, depth: depth() }, '', `#${view}`);
     }
     if (view !== 'search') {
-      // ประกันอุบัติเหตุ: รหัสแผนซ้ำกันข้ามอายุ/ชั้นอาชีพ จึงล้างแผนที่เลือกไว้เมื่อผู้เอาประกันเปลี่ยน (เช่น กดย้อนกลับ แก้ แล้วกดไปข้างหน้า)
-      if (isPaTab() && state.picksSig !== carSig()) state.picks = [];
       const v = vehicle();
       state.picks = state.picks.filter((p) => resolvePick(v, p));
     }
@@ -847,8 +938,55 @@
       <p class="page-note">เบี้ยประกันตามโบรชัวร์มิตรแท้ประกันภัย ต่อคนต่อปี (PLV และ PA 700 รวมภาษีมูลค่าเพิ่มและอากรแสตมป์ · PMA กระดูกแตกหักรวมอากรแสตมป์)</p>`;
   }
 
+  // ประกันอัคคีภัย: เลือกแค่ประเภทสิ่งปลูกสร้าง + ทุนประกัน (กดปุ่มอย่างเดียว ไม่ต้องพิมพ์) — ปุ่มทุนบอกเบี้ยของชั้นที่เลือกไว้เลย
+  function renderFireSearch() {
+    const complete = isComplete();
+    const done = [!!state.fireCls, !!state.fireSum].filter(Boolean).length;
+    const c = fireClass(state.fireCls);
+    const rowOf = (sum) => FIRE.rates.find(([s]) => s === sum);
+    const gross = (sum) => firePremium(rowOf(sum), c).gross;
+    const other = state.fireSum && !FIRE.popular.includes(state.fireSum);
+    const [min, max] = [FIRE.rates[0][0], FIRE.rates[FIRE.rates.length - 1][0]];
+    return `
+      <section class="hero">
+        <p class="hero-kicker">${icon('shield')} มิตรแท้ประกันภัย</p>
+        <h1>เช็คเบี้ยประกันอัคคีภัย<span class="nw">ที่อยู่อาศัย</span><br><span>เลือกประเภทบ้าน + ทุนประกัน รู้ราคาทันที</span></h1>
+        <div class="hero-classes"><span>ไฟไหม้</span><span>ภัยธรรมชาติ</span><span>เริ่ม ${money(Math.min(...FIRE.rates.map((r) => r[2])))}</span></div>
+      </section>
+      <section class="card finder">
+        ${vtypeTabs()}
+        <div class="progress" aria-hidden="true"><i style="width:${Math.round((done / 2) * 100)}%"></i></div>
+        <h2 class="finder-title">ค้นหาแผนประกัน${VTYPES.fire.noun}</h2>
+        <div class="step" id="step-fcls">
+          ${stepHead(1, 'ประเภทสิ่งปลูกสร้าง', !!c)}
+          <div class="option-list">
+            ${FIRE.classes.map((x) => `
+              <button class="option ${state.fireCls === x.id ? 'is-on' : ''}" data-action="fire-cls" data-value="${x.id}" aria-pressed="${state.fireCls === x.id}">
+                <span class="radio"></span><span><b>${x.label}</b><small>${x.desc}</small></span>
+              </button>`).join('')}
+          </div>
+          <p class="step-note">${icon('info')}สำหรับ${FIRE.buildings} ที่มีผู้อยู่อาศัยประจำ · บ้านไม้ทั้งหลังไม่อยู่ในแผนนี้</p>
+        </div>
+        ${c ? `
+        <div class="step" id="step-fsum">
+          ${stepHead(2, 'ทุนประกันภัย (บาท)', !!state.fireSum)}
+          <p class="step-sub">สิ่งปลูกสร้าง + ทรัพย์สินภายใน ไม่รวมราคาที่ดิน</p>
+          <div class="chip-grid sums">
+            ${FIRE.popular.map((sum) => `<button class="chip ${state.fireSum === sum ? 'is-on' : ''}" data-action="fire-sum" data-value="${sum}" aria-pressed="${state.fireSum === sum}">${money(sum)}<small>${money(gross(sum))} บาท/ปี</small></button>`).join('')}
+          </div>
+          <button class="select-btn ${other ? 'is-on' : ''}" data-action="fire-sum-more">
+            <span>${other ? `ทุน ${money(state.fireSum)} · ${money(gross(state.fireSum))} บาท/ปี` : `ทุนอื่น ๆ (${money(min)} – ${money(max)})`}</span>${icon('chev')}
+          </button>
+        </div>` : ''}
+        <button class="btn btn-primary btn-block see-plans" id="seePlans" data-action="see-plans" ${complete ? '' : 'disabled'}>ดูเบี้ยประกันเลย</button>
+      </section>
+      ${agentCard()}
+      <p class="page-note">เบี้ยประกันต่อปีตามโบรชัวร์มิตรแท้ประกันภัย รวมอากรแสตมป์และภาษีมูลค่าเพิ่มแล้ว</p>`;
+  }
+
   function renderSearch() {
     if (isPaTab()) return renderPaSearch();
+    if (isFireTab()) return renderFireSearch();
     const brand = getBrand();
     const model = getModel();
     const modelOk = !!(model && model.kind);
@@ -1054,9 +1192,69 @@
         </section>`}`;
   }
 
+  function fireSummary(v) {
+    return `
+      <section class="card car-summary">
+        <div class="car-row">
+          <span class="car-ico">${icon('home')}</span>
+          <div class="car-text"><b>ทุน ${money(v.sum)} บาท</b><small>${esc(v.cls.label)} (สิ่งปลูกสร้าง${v.cls.short}) · คุ้มครอง 1 ปี</small></div>
+          <button class="link-btn" data-action="edit-car">แก้ไข</button>
+        </div>
+      </section>`;
+  }
+
+  // ความคุ้มครองเหมือนกันทุกทุน จึงแสดงครั้งเดียวใต้รายการเบี้ย
+  function fireCoverCard() {
+    const list = [
+      [true, 'ไฟไหม้ ฟ้าผ่า ภัยระเบิด คุ้มครองตามทุนประกัน (รวมเครื่องใช้ไฟฟ้าเสียหายจากฟ้าผ่า)'],
+      [true, 'ภัยจากยานพาหนะ อากาศยาน และภัยเนื่องจากน้ำ (ไม่รวมน้ำท่วม) ตามทุนประกัน'],
+      [true, `ภัยธรรมชาติ ลมพายุ น้ำท่วม แผ่นดินไหว ลูกเห็บ รวมไม่เกิน ${money(FIRE.natCap)} บาท/ปี`],
+      [true, 'ค่าเช่าที่อยู่อาศัยชั่วคราว ตามเงื่อนไขกรมธรรม์'],
+      [false, 'ไม่คุ้มครองเงินสด ทองคำ อัญมณี โบราณวัตถุ เอกสารสำคัญ'],
+    ];
+    return `
+      <section class="card fire-cov">
+        <h2 class="card-title">ความคุ้มครอง <small>เหมือนกันทุกทุน</small></h2>
+        <ul class="hl">${list.map(([ok, t]) => `<li class="${ok ? 'ok' : 'no'}">${icon(ok ? 'check' : 'x')}<span>${esc(t)}</span></li>`).join('')}</ul>
+      </section>`;
+  }
+
+  // แถวเบี้ยตามทุน — แตะทั้งแถวเพื่อเลือก (ความคุ้มครองอยู่ในการ์ดใต้รายการ)
+  function fireRow(o) {
+    const picked = isPicked(o);
+    return `
+      <article class="prow ${picked ? 'is-picked' : ''}">
+        <div class="prow-line">
+          <button class="prow-pick" data-action="pick" data-value="${o.key}" aria-pressed="${picked}">
+            <span class="pcheck">${icon('check')}</span>
+            <span class="prow-text">
+              <b><span>${esc(o.planShort)}</span>${o.chosen ? '<span class="tag">ทุนที่เลือก</span>' : ''}</b>
+              <small>เบี้ยสุทธิ ${money(o.net)}</small>
+            </span>
+            <span class="prow-price"><b>${money(o.price)}</b><small>บาท/ปี</small></span>
+          </button>
+        </div>
+      </article>`;
+  }
+
+  function renderFirePlans(v) {
+    const offers = buildOffers(v);
+    return `
+      ${fireSummary(v)}
+      <p class="result-count">ทุนที่เลือกและทุนใกล้เคียง · เลือกได้สูงสุด ${MAX_PICKS} ทุน</p>
+      <div class="offer-list rows">${offers.map(fireRow).join('')}</div>
+      <button class="add-more" data-action="edit-car">${icon('search')}ดูทุนประกันอื่น</button>
+      ${summaryButton(offers.length)}
+      ${fireCoverCard()}
+      ${agentCard()}
+      <p class="page-note">เบี้ยประกันต่อปีตามโบรชัวร์ · บริษัทฯ ขอสงวนสิทธิ์ในการพิจารณารับประกันภัย</p>
+      ${pickTray(v)}`;
+  }
+
   function renderPlans() {
     const v = vehicle();
     if (v.kind === 'pa') return renderPaPlans(v);
+    if (v.kind === 'fire') return renderFirePlans(v);
     const offers = buildOffers(v);
     const counts = { '2+': 0, '3+': 0, 3: 0 };
     offers.forEach((o) => { counts[o.cls]++; });
@@ -1305,7 +1503,7 @@
     return `
       <div class="section-head">
         <h2>แผนที่เลือก <span>${offers.length} แผน</span></h2>
-        <p>${icon(vehicleIcon(v))} ${esc(v.name)}${v.kind === 'pa' ? '' : ` · ปี ${yearLabel(v.year)}`}</p>
+        <p>${icon(vehicleIcon(v))} ${esc(v.name)}${nonMotor(v) ? '' : ` · ปี ${yearLabel(v.year)}`}</p>
       </div>
       ${offers.map((o) => pickCard(o)).join('')}
       ${offers.length < MAX_PICKS ? `<button class="add-more" data-action="back">${icon('plus')}เลือกแผนเพิ่ม (ได้อีก ${MAX_PICKS - offers.length} แผน)</button>` : ''}
@@ -1354,7 +1552,7 @@
         <button class="btn btn-ghost" data-action="print">${icon('print')}PDF</button>
         <button class="btn btn-ghost" data-action="share">${icon('share')}แชร์</button>
       </div>`;
-  const restartBtn = () => `<button class="btn btn-ghost btn-block restart" data-action="restart">${icon('refresh')}เช็คเบี้ย${isPaTab() ? 'คน' : 'คัน'}ใหม่</button>`;
+  const restartBtn = () => `<button class="btn btn-ghost btn-block restart" data-action="restart">${icon('refresh')}${isFireTab() ? 'เริ่มเช็คเบี้ยใหม่' : `เช็คเบี้ย${isPaTab() ? 'คน' : 'คัน'}ใหม่`}</button>`;
 
   function renderQuote() {
     return `${quoteActions()}
@@ -1387,6 +1585,13 @@
 
   // รายละเอียดรถ / ผู้เอาประกันภัยในใบเสนอราคา: [หัวข้อ, ค่า (HTML)]
   function carDetails(v) {
+    if (v.kind === 'fire') {
+      return [
+        ['ประเภทสิ่งปลูกสร้าง', `สิ่งปลูกสร้าง${v.cls.short} (${esc(v.cls.label)})`],
+        ['ระยะเวลาคุ้มครอง', '1 ปี'],
+        ['ทรัพย์สินที่คุ้มครอง', 'สิ่งปลูกสร้าง (ไม่รวมฐานราก) และทรัพย์สินภายใน'],
+      ];
+    }
     const moto = v.kind === 'moto';
     const car = v.kind === 'pa'
       ? [
@@ -1414,6 +1619,7 @@
     const anyDeduct = offers.some(hasDeduct);
     const tpbiFor = (o) => (o.type === 'plus' ? addons.tpbi : null);
     const pa = v.kind === 'pa';
+    const fire = v.kind === 'fire';
 
     const row = (label, cells, cls = '') => `<tr class="${cls}"><th>${label}</th>${cells.join('')}</tr>`;
     const cell = (val) => (val === undefined ? dash : `<td class="${val == null ? 'no' : ''}">${val == null ? 'ไม่คุ้มครอง' : val}</td>`);
@@ -1422,6 +1628,7 @@
 
     const body = [];
     if (!pa) body.push(group('รายละเอียดแผน'));
+    if (fire) body.push(row('ทุนประกันภัย<small>สิ่งปลูกสร้าง + ทรัพย์สินภายใน</small>', offers.map((o) => `<td>${money(o.sum)}</td>`)));
     if (anySum) body.push(row('ทุนประกันรถชนรถ', offers.map((o) => (hasSum(o) ? `<td>${money(o.sum)}</td>` : dash))));
     if (anyDeduct) {
       body.push(row(offers.some((o) => o.type === 'truck') ? 'ค่าเสียหายส่วนแรก<small>ต่อทรัพย์สินบุคคลภายนอก</small>' : 'ค่าเสียหายส่วนแรก (Deduct)',
@@ -1437,6 +1644,9 @@
       const taxNotes = [...new Set(offers.map((o) => o.taxNote))];
       if (opts.land && taxNotes.length === 1) body.push(row(`เบี้ยประกันภัยต่อคนต่อปี<small>${taxNotes[0]}</small>`, prices.map((p) => `<td>${money(p.premium)}</td>`)));
       else body.push(row('เบี้ยประกันภัยต่อคนต่อปี', prices.map((p, i) => `<td>${money(p.premium)}<br><small>${offers[i].taxNote}</small></td>`)));
+    } else if (fire) {
+      body.push(row('เบี้ยประกันภัยสุทธิ', offers.map((o) => `<td>${money(o.net)}</td>`)));
+      body.push(row('อากรแสตมป์และภาษีมูลค่าเพิ่ม', offers.map((o) => `<td>${money(o.price - o.net)}</td>`)));
     } else body.push(row('เบี้ยประกันภัย<small>รวมภาษีมูลค่าเพิ่มและอากรแสตมป์</small>', prices.map((p) => `<td>${money(p.premium)}</td>`)));
     if (prices.some((p) => p.ncd)) {
       const label = R.plusRules.ncdLabels[ncdShown(addons.ncd, offers)];
@@ -1459,8 +1669,8 @@
                   ${offers.map((o) => `
                     <th>
                       <span class="qp-badges">${clsBadge(o)}${o.tier ? `<span class="tier t-${o.tier.toLowerCase()}">${o.tier}</span>` : ''}</span>
-                      <b>${esc(o.product)}</b>
-                      <small>${esc(o.planTh)}</small>
+                      <b>${esc(o.head || o.product)}</b>
+                      <small>${esc(o.headSub || o.planTh)}</small>
                     </th>`).join('')}
                 </tr>
               </thead>
@@ -1473,6 +1683,7 @@
     const { v, q } = o;
     const moto = v.kind === 'moto';
     const pa = v.kind === 'pa';
+    const fire = v.kind === 'fire';
     return `
       <article class="qp${o.land ? ' is-land' : ''}">
         <div class="qp-inner">
@@ -1493,8 +1704,8 @@
             <div><small>วันที่</small><b>${quoteDate(q)}</b></div>
           </div>
           <section class="qp-sec">
-            <h4>รายละเอียด${pa ? 'ผู้เอาประกันภัย' : moto ? 'รถจักรยานยนต์' : 'รถยนต์'}</h4>
-            <dl class="qp-car ${moto ? 'is-moto' : ''} ${pa ? 'is-pa' : ''}">${carDetails(v).map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>
+            <h4>รายละเอียด${fire ? 'ทรัพย์สินที่เอาประกันภัย' : pa ? 'ผู้เอาประกันภัย' : moto ? 'รถจักรยานยนต์' : 'รถยนต์'}</h4>
+            <dl class="qp-car ${moto ? 'is-moto' : ''} ${pa ? 'is-pa' : ''} ${fire ? 'is-fire' : ''}">${carDetails(v).map(([k, val]) => `<div><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>
           </section>
           <section class="qp-sec">
             <h4>${o.tableTitle}</h4>
@@ -1506,7 +1717,7 @@
           </section>
           <footer class="qp-foot">
             <span>Mittare Contact Center <b>${R.contact.center}</b></span>
-            <span>แจ้งอุบัติเหตุ 24 ชม. <b>${R.contact.accident}</b></span>
+            <span>${fire ? 'สายด่วน' : 'แจ้งอุบัติเหตุ'} 24 ชม. <b>${R.contact.accident}</b></span>
           </footer>
         </div>
       </article>`;
@@ -1636,7 +1847,7 @@
     if (v.kind === 'car' || v.kind === 'moto') {
       car.push(opt('การใช้รถ', '', seg('usage', [['personal', 'ส่วนบุคคล'], ['commercial', 'เพื่อการพาณิชย์']], state.usage)));
     }
-    if (v.kind !== 'pa' && custTypeApplicable(v)) {
+    if (!nonMotor(v) && custTypeApplicable(v)) {
       car.push(opt('ประเภทลูกค้า', '', seg('cust', [['new', 'ลูกค้าใหม่ 2569'], ['old', 'ลูกค้าเดิม']], state.custType)));
     }
 
@@ -1718,8 +1929,9 @@
   // แสดงตัวเลือกที่ใช้อยู่ในหน้าใบรวม (แตะเพื่อแก้)
   function summaryOptionsText(v, offers) {
     const parts = [];
+    if (v.kind === 'fire') parts.push(`${v.cls.label} (สิ่งปลูกสร้าง${v.cls.short})`);
     if (v.kind === 'car' || v.kind === 'moto') parts.push(usageTh());
-    if (v.kind !== 'pa' && custTypeApplicable(v)) parts.push(state.custType === 'old' ? 'ลูกค้าเดิม' : 'ลูกค้าใหม่ 2569');
+    if (!nonMotor(v) && custTypeApplicable(v)) parts.push(state.custType === 'old' ? 'ลูกค้าเดิม' : 'ลูกค้าใหม่ 2569');
     ['plus2', 'plus3', 'moto'].forEach((fam) => {
       const o = offers.find((x) => hasSum(x) && x.family === fam);
       if (o) parts.push(`ทุน ${fam === 'moto' ? '' : `${o.cls} `}${money(o.sum)}`);
@@ -1756,10 +1968,12 @@
       <div class="sum-chrome">${restartBtn()}</div>`;
   }
 
-  const productTitle = (v) => (v.kind === 'pa' ? 'ประกันภัยอุบัติเหตุส่วนบุคคล' : `ประกันภัย${v.kind === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}ภาคสมัครใจ`);
+  const productTitle = (v) => (v.kind === 'fire' ? 'ประกันอัคคีภัยสำหรับที่อยู่อาศัย แบบสำเร็จรูป (FIN)'
+    : v.kind === 'pa' ? 'ประกันภัยอุบัติเหตุส่วนบุคคล' : `ประกันภัย${v.kind === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}ภาคสมัครใจ`);
   const shareTitle = () => {
     const k = vehicle().kind;
-    return `ใบเสนอราคาประกันภัย${k === 'pa' ? 'อุบัติเหตุส่วนบุคคล' : k === 'moto' ? 'รถจักรยานยนต์' : 'รถยนต์'}${state.view === 'summary' ? ' (รวมทุกแผน)' : ''}`;
+    const what = { fire: 'อัคคีภัยสำหรับที่อยู่อาศัย', pa: 'อุบัติเหตุส่วนบุคคล', moto: 'รถจักรยานยนต์' }[k] || 'รถยนต์';
+    return `ใบเสนอราคาประกัน${k === 'fire' ? '' : 'ภัย'}${what}${state.view === 'summary' ? ' (รวมทุกแผน)' : ''}`;
   };
 
   function shareText() {
@@ -1770,11 +1984,17 @@
     const lines = [`${shareTitle()} มิตรแท้ประกันภัย`, `เลขที่ ${activeQuote().no}`];
     const phone = state.customer.phone.trim();
     if (name || phone || !summary) lines.push(`ลูกค้า: ${name || '—'}${phone ? ` โทร ${phone}` : ''}`);
-    lines.push(v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`, '');
+    if (v.kind === 'fire') lines.push(`ทรัพย์สิน: ${v.cls.label} (สิ่งปลูกสร้าง${v.cls.short}) คุ้มครอง 1 ปี`, '');
+    else lines.push(v.kind === 'pa' ? `ผู้เอาประกันภัย: ${v.name}` : `รถ: ${v.name} ปี ${yearLabel(v.year)}`, '');
     offers.forEach((o, i) => {
       const p = pricing(o, v);
-      lines.push(`${i + 1}) ${o.type === 'pa' ? `${o.product} ${o.planShort}`.trim() : `${shortName(o)} ${o.product}`}`);
-      lines.push(`   ${pickDetail(o)}`);
+      if (o.type === 'fire') {
+        lines.push(`${i + 1}) ${o.planTh}`);
+        lines.push(`   เบี้ยสุทธิ ${money(o.net)} + อากรและภาษี ${money(o.price - o.net)}`);
+      } else {
+        lines.push(`${i + 1}) ${o.type === 'pa' ? `${o.product} ${o.planShort}`.trim() : `${shortName(o)} ${o.product}`}`);
+        lines.push(`   ${pickDetail(o)}`);
+      }
       lines.push(`   เบี้ยรวม ${money(p.total)} บาท`);
     });
     const extra = [];
@@ -1858,6 +2078,7 @@
 
   function nextStepId() {
     if (isPaTab()) return !state.paAge ? 'step-age' : !state.paOcc ? 'step-occ' : 'seePlans';
+    if (isFireTab()) return !state.fireCls ? 'step-fcls' : !state.fireSum ? 'step-fsum' : 'seePlans';
     const m = getModel();
     if (!m || !m.kind) return 'step-model';
     if (!state.year) return 'step-year';
@@ -2193,6 +2414,34 @@
           },
         });
         break;
+      case 'fire-cls':
+        state.fireCls = val;
+        render();
+        scrollToStep(nextStepId());
+        break;
+      case 'fire-sum':
+        state.fireSum = Number(val);
+        render();
+        scrollToStep('seePlans');
+        break;
+      case 'fire-sum-more': {
+        const c = fireClass(state.fireCls);
+        openSheet({
+          title: `ทุนประกันภัย · ${c.label}`,
+          items: FIRE.rates.map((row) => ({
+            value: String(row[0]),
+            label: `${money(row[0])} บาท`,
+            sub: `เบี้ย ${money(firePremium(row, c).gross)} บาท/ปี`,
+            selected: state.fireSum === row[0],
+          })),
+          onPick: (sum) => {
+            state.fireSum = Number(sum);
+            render();
+            scrollToStep('seePlans');
+          },
+        });
+        break;
+      }
       case 'model': selectModel(val); break;
       case 'model-more': {
         const brand = getBrand();
@@ -2233,11 +2482,7 @@
           break;
         }
         if (!isComplete()) break;
-        if (state.picksSig !== carSig()) {
-          state.picks = [];
-          state.picksSig = carSig();
-          state.filter = 'all';
-        }
+        if (state.picksSig !== carSig()) resetPicks();
         go('plans');
         break;
       }
