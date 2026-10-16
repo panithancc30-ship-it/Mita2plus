@@ -590,6 +590,7 @@ body:not([data-view="search"]) main { padding-top: 16px; }
 .prow-detail .notes { margin: 10px 0 2px; }
 /* ประกันอัคคีภัย: แถวเบี้ยตามทุน (ไม่มีปุ่มขยาย) */
 .prow-pick:last-child { border-radius: 14px; padding-right: 14px; }
+.prow-text b { flex-wrap: wrap; row-gap: 2px; } /* ป้าย "ทุนที่เลือก" ขึ้นบรรทัดใหม่ได้บนจอแคบ */
 .prow-text b .tag { margin-left: 0; font-size: 11.5px; font-weight: 600; color: var(--green-700); background: var(--green-50); }
 .fire-cov .card-title { margin-bottom: 4px; }
 

@@ -182,7 +182,10 @@
     return !!(getBrand() && m && m.kind && state.year && (!needsBody(m.kind) || state.body));
   }
 
-  const carSig = () => JSON.stringify([state.vtype, state.brandId, state.customBrand, state.modelName, state.customModel, state.customKind, state.customCc, state.year, state.body, state.paAge, state.paOcc, state.paOccName, state.fireCls, state.fireSum]);
+  // ข้อมูลที่ใช้คิดแผน เฉพาะของแท็บที่เปิดอยู่ (แก้ข้อมูลแท็บอื่นแล้วแผนที่เลือกไว้ไม่หาย)
+  const carSig = () => JSON.stringify(isPaTab() ? [state.vtype, state.paAge, state.paOcc, state.paOccName]
+    : isFireTab() ? [state.vtype, state.fireCls, state.fireSum]
+    : [state.vtype, state.brandId, state.customBrand, state.modelName, state.customModel, state.customKind, state.customCc, state.year, state.body]);
 
   // ประกันอุบัติเหตุ: "ผู้เอาประกัน" ใช้แทนรถในทุกหน้า (kind: 'pa')
   function paSubject() {
@@ -385,6 +388,8 @@
         product: `${FIRE.name} (${FIRE.code})`,
         planTh: `ทุนประกันภัย ${money(row[0])} บาท`,
         planShort: `ทุน ${money(row[0])}`,
+        head: `ทุน ${money(row[0])}`, // หัวคอลัมน์ในใบเสนอราคา (สั้นให้ 4 คอลัมน์พอดี A4)
+        headSub: `${FIRE.name} ${FIRE.code}`,
         sum: row[0],
         net,
         price: gross,
@@ -844,7 +849,18 @@
   pageStyle.id = 'pageSize';
   document.head.appendChild(pageStyle);
 
+  // เริ่มเลือกแผนใหม่ตามข้อมูลปัจจุบัน (อัคคีภัย: เลือกทุนที่ระบุไว้ให้เลย กดขอใบเสนอราคาได้ทันที)
+  function resetPicks() {
+    state.picks = [];
+    state.picksSig = carSig();
+    state.filter = 'all';
+    if (isFireTab()) state.picks = buildOffers(vehicle()).filter((o) => o.chosen).map(pickFromOffer);
+  }
+
   function render() {
+    // ประกันอุบัติเหตุ/อัคคีภัย: รหัสแผนซ้ำกันข้ามอายุ/ชั้นอาชีพ/ชั้นสิ่งปลูกสร้าง จึงเริ่มเลือกใหม่เมื่อข้อมูลเปลี่ยน
+    // (เช่น กดย้อนกลับ แก้ แล้วกดไปข้างหน้า หรือเปิดแอพเวอร์ชันใหม่ทับหน้าเดิม) — ทำก่อน canShow และจำข้อมูลชุดใหม่ไว้
+    if (state.view !== 'search' && (isPaTab() || isFireTab()) && isComplete() && state.picksSig !== carSig()) resetPicks();
     let view = state.view;
     while (!canShow(view)) view = PARENT[view] || 'search';
     if (view !== state.view) {
@@ -852,8 +868,6 @@
       history.replaceState({ view, depth: depth() }, '', `#${view}`);
     }
     if (view !== 'search') {
-      // ประกันอุบัติเหตุ/อัคคีภัย: รหัสแผนซ้ำกันข้ามอายุ/ชั้นอาชีพ/ชั้นสิ่งปลูกสร้าง จึงล้างแผนที่เลือกไว้เมื่อข้อมูลเปลี่ยน (เช่น กดย้อนกลับ แก้ แล้วกดไปข้างหน้า)
-      if ((isPaTab() || isFireTab()) && state.picksSig !== carSig()) state.picks = [];
       const v = vehicle();
       state.picks = state.picks.filter((p) => resolvePick(v, p));
     }
@@ -1655,8 +1669,8 @@
                   ${offers.map((o) => `
                     <th>
                       <span class="qp-badges">${clsBadge(o)}${o.tier ? `<span class="tier t-${o.tier.toLowerCase()}">${o.tier}</span>` : ''}</span>
-                      <b>${esc(o.product)}</b>
-                      <small>${esc(o.planTh)}</small>
+                      <b>${esc(o.head || o.product)}</b>
+                      <small>${esc(o.headSub || o.planTh)}</small>
                     </th>`).join('')}
                 </tr>
               </thead>
@@ -2468,13 +2482,7 @@
           break;
         }
         if (!isComplete()) break;
-        if (state.picksSig !== carSig()) {
-          state.picks = [];
-          state.picksSig = carSig();
-          state.filter = 'all';
-          // อัคคีภัย: เลือกทุนที่ระบุไว้ให้เลย กดขอใบเสนอราคาได้ทันที
-          if (isFireTab()) state.picks = buildOffers(vehicle()).filter((o) => o.chosen).map(pickFromOffer);
-        }
+        if (state.picksSig !== carSig()) resetPicks();
         go('plans');
         break;
       }
