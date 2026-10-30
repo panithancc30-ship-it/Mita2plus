@@ -46,9 +46,11 @@ window.MT_RATES = {
         GOLD:     { deduct: [6600, 7000, 7400, 7800, 8100, 8400], noDeduct: [7300, 7800, 8300, 8800, 9300, 9700] },
         SILVER:   { deduct: [5900, 6300, 6600, 6900, 7100, 7400], noDeduct: [6600, 7100, 7500, 7900, 8300, 8700] },
       },
+      // เงินชดเชยรายได้/ค่าเดินทาง มีเฉพาะแพลทินัม — ใน PDF ช่อง "ไม่คุ้มครอง" ผสานคลุมโกลด์และซิลเวอร์
+      // (JSON ระบุ availableIn platinum+gold ซึ่งอ่านช่องผสานผิด)
       coverage: {
         PLATINUM: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000, dailyComp: 1000, travelComp: 1000 },
-        GOLD:     { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000, dailyComp: 1000, travelComp: 1000 },
+        GOLD:     { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000 },
         SILVER:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: true, pa: 50000,  med: 50000,  bail: 200000 },
       },
     },
@@ -88,7 +90,7 @@ window.MT_RATES = {
       },
       coverage: {
         PLATINUM: { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000, dailyComp: 1000, travelComp: 1000 },
-        GOLD:     { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000, dailyComp: 1000, travelComp: 1000 },
+        GOLD:     { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 2000000, theftFire: true, pa: 150000, med: 150000, bail: 600000 },
         SILVER:   { tpbiPerson: 500000, tpbiTime: 20000000, tppd: 1000000, theftFire: true, pa: 50000,  med: 50000,  bail: 200000 },
       },
     },
