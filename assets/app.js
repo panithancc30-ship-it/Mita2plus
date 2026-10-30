@@ -435,6 +435,7 @@
           ncd: p.ncd,
           campaign: !!p.campaign,
           needsQT: !!p.needsQT,
+          tpbiUp: !p.noTpbiUpgrade,
         });
       });
     });
@@ -728,6 +729,8 @@
     if (o.type === 'plus') {
       const amount = o.ncd[Math.min(addons.ncd, o.ncd.length - 1)];
       if (amount) p.ncd = -amount;
+    }
+    if (o.tpbiUp) {
       const up = R.plusRules.tpbiUpgrade.find((x) => x.perPerson === addons.tpbi);
       if (up) p.tpbi = up.amount;
     }
@@ -1488,9 +1491,12 @@
           <p class="field-label">ส่วนลดประวัติดี${note || '<small>ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด</small>'}</p>
           ${radioList('ncd', ncdOptions, state.addons.ncd)}`);
       }
-      extras.push(`
-        <p class="field-label">ความคุ้มครองชีวิต ร่างกาย บุคคลภายนอก${note}</p>
-        ${radioList('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, `${money(u.perPerson)} บาท/คน${u.amount ? '' : ' (มาตรฐาน)'}`, u.amount ? `+${money(u.amount)}` : '']), state.addons.tpbi)}`);
+      if (offers.some((o) => o.tpbiUp)) {
+        const upNote = offers.some((o) => !o.tpbiUp) ? '<small>ใช้กับแผนชั้น 2+ และ 3+</small>' : '';
+        extras.push(`
+          <p class="field-label">ความคุ้มครองชีวิต ร่างกาย บุคคลภายนอก${upNote}</p>
+          ${radioList('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, `${money(u.perPerson)} บาท/คน${u.amount ? '' : ' (มาตรฐาน)'}`, u.amount ? `+${money(u.amount)}` : '']), state.addons.tpbi)}`);
+      }
     }
     if (cmi) {
       extras.push(`
@@ -1617,7 +1623,7 @@
     const prices = offers.map((o) => pricing(o, v, addons));
     const anySum = offers.some(hasSum);
     const anyDeduct = offers.some(hasDeduct);
-    const tpbiFor = (o) => (o.type === 'plus' ? addons.tpbi : null);
+    const tpbiFor = (o) => (o.tpbiUp ? addons.tpbi : null);
     const pa = v.kind === 'pa';
     const fire = v.kind === 'fire';
 
@@ -1653,7 +1659,7 @@
       body.push(row(`ส่วนลดประวัติดี<small>${esc(label)}</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td class="minus">${signed(prices[i].ncd)}</td>` : dash))));
     }
     if (prices.some((p) => p.tpbi)) {
-      body.push(row(`เพิ่มวงเงินชีวิตบุคคลภายนอก<small>เป็น ${money(addons.tpbi)} บาท/คน</small>`, offers.map((o, i) => (o.type === 'plus' ? `<td>${signed(prices[i].tpbi)}</td>` : dash))));
+      body.push(row(`เพิ่มวงเงินชีวิตบุคคลภายนอก<small>เป็น ${money(addons.tpbi)} บาท/คน</small>`, offers.map((o, i) => (o.tpbiUp ? `<td>${signed(prices[i].tpbi)}</td>` : dash))));
     }
     if (prices.some((p) => p.cmi)) {
       body.push(row('พ.ร.บ.<small>รวมภาษีอากร</small>', prices.map((p) => (p.cmi ? `<td>${signed(p.cmi)}</td>` : dash))));
@@ -1879,8 +1885,10 @@
         state.addons.ncd = Math.min(state.addons.ncd, maxTiers - 1);
         extra.push(opt('ส่วนลดประวัติดี', plusNote || 'ไม่มีเคลมทั้งฝ่ายถูกและฝ่ายผิด', select('ncd', ncdOpts, state.addons.ncd)));
       }
-      extra.push(opt('วงเงินชีวิต ร่างกาย บุคคลภายนอก (ต่อคน)', plusNote,
-        seg('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, money(u.perPerson), u.amount ? `+${money(u.amount)}` : 'มาตรฐาน']), state.addons.tpbi)));
+      if (plus.some((o) => o.tpbiUp)) {
+        extra.push(opt('วงเงินชีวิต ร่างกาย บุคคลภายนอก (ต่อคน)', offers.some((o) => !o.tpbiUp) ? 'ใช้กับแผนชั้น 2+ และ 3+' : '',
+          seg('tpbi', rules.tpbiUpgrade.map((u) => [u.perPerson, money(u.perPerson), u.amount ? `+${money(u.amount)}` : 'มาตรฐาน']), state.addons.tpbi)));
+      }
     }
     const cmi = offers.map((o) => cmiAmount(o, v)).find(Boolean);
     if (cmi) {
@@ -1940,7 +1948,7 @@
     if (d) parts.push(state.deduct ? `Deduct ${money(d.deductAmount)}` : 'ไม่มี Deduct');
     const plus = offers.filter((o) => o.type === 'plus');
     if (plus.length && ncdShown(state.addons.ncd, plus) && !plus.every((o) => o.campaign)) parts.push(`ส่วนลด${R.plusRules.ncdLabels[ncdShown(state.addons.ncd, plus)]}`);
-    if (plus.length && state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson) parts.push(`บุคคลภายนอก ${money(state.addons.tpbi)}/คน`);
+    if (plus.some((o) => o.tpbiUp) && state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson) parts.push(`บุคคลภายนอก ${money(state.addons.tpbi)}/คน`);
     if (offers.some((o) => cmiAmount(o, v))) parts.push(state.addons.cmi ? 'รวม พ.ร.บ.' : 'ไม่รวม พ.ร.บ.');
     const name = state.customer.name.trim();
     parts.push(name ? `เรียน ${name}` : 'ยังไม่ใส่ชื่อลูกค้า');
@@ -1999,7 +2007,7 @@
     });
     const extra = [];
     if (ncdShown(state.addons.ncd, offers) && offers.some((o) => o.type === 'plus' && !o.campaign)) extra.push(`ส่วนลดประวัติดี: ${R.plusRules.ncdLabels[ncdShown(state.addons.ncd, offers)]}`);
-    if (state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson && offers.some((o) => o.type === 'plus')) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
+    if (state.addons.tpbi !== R.plusRules.tpbiUpgrade[0].perPerson && offers.some((o) => o.tpbiUp)) extra.push(`วงเงินชีวิตบุคคลภายนอก ${money(state.addons.tpbi)} บาท/คน`);
     if (state.addons.cmi && offers.some((o) => cmiAmount(o, v))) extra.push('พ.ร.บ.');
     if (extra.length) lines.push('', `(รวม ${extra.join(' · ')} แล้ว)`);
     const note = summary ? premiumNote(v, offers) : '';
